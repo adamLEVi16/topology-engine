@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "topology-engine"
+version = "0.1.0"
+description = "Universal topological analyzer for matrix-shaped datasets."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Adam Levine" }
+]
+dependencies = [
+  "numpy>=1.24",
+  "pandas>=2.0",
+  "scipy>=1.11",
+  "scikit-learn>=1.3",
+  "matplotlib>=3.7",
+  "ripser>=0.6.4",
+  "persim>=0.3.1"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0"
+]
+umap = [
+  "umap-learn>=0.5.6"
+]
+parquet = [
+  "pyarrow>=15.0"
+]
+
+[project.scripts]
+tda = "topology_engine.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
