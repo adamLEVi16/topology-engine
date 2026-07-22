@@ -105,7 +105,29 @@ The object is close to piecewise-constant, which is *why* no event test resolves
 `p_value_floor` field reports the smallest achievable p (1/520) so the test cannot
 over-claim.
 
-### 2.5 Robustness: the (non-)result is stable, the levels are not
+### 2.5 The landscape claim is verified exactly — and upgraded (`landscapes.py`)
+
+RESULTS.md finding 1 claimed landscapes are "~0" because every H₁ class is essential.
+`landscapes.py` now verifies this by direct computation of H₁ persistence diagrams and
+exact landscape norms (grid-integrated, no external deps):
+
+- **Zero finite H₁ bars on all 579 days, 2022-06-01 → 2023-12-31.** Not one loop class
+  is ever closed by a weaker pool across 19 consecutive months. Under the standard
+  discard-infinite convention (gudhi/persim default; the Gidea–Katz pipeline), the H₁
+  landscape is **identically zero** — L1 = L2 = L∞ = 0 exactly, every day.
+- **The truncation escape hatch doesn't rescue it.** Capping infinite bars at a cutoff
+  makes norms nonzero (L2 ≈ 1.2–1.4) but the value tracks the arbitrary cutoff choice
+  (fmax vs dust-cap ceiling shift it ~10%), and event vs placebo truncated norms are
+  statistically indistinguishable anyway (mean L2 1.22 vs 1.25).
+- **Control for "broken machinery":** H₀ has genuine finite bars and nonzero landscapes
+  (L2 mean 0.62 event / 0.46 placebo), so the computation is fine — the degeneracy is a
+  property of H₁ on this object.
+
+Preprint phrasing this supports: *"On share-filtered structural liquidity complexes the
+persistence-landscape summary is identically zero in H₁; the return-space TDA toolkit
+does not transfer."* Evidence: `landscape_audit.json`.
+
+### 2.6 Robustness: the (non-)result is stable, the levels are not
 
 Across 3 dust caps × 3 half-windows × 2 LP forks: the event-window essB₁ is **≤ the
 placebo in all 18 cells**, lp_vertex ≡ resolved in all 18, and 0 days are dropped. The
