@@ -1,3 +1,5 @@
 charts/
 *.png
 __pycache__/
+!figs/
+!figs/*.png

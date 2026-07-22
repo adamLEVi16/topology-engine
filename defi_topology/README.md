@@ -26,9 +26,13 @@ with proper inference.
 | `inference.py` | Placebo-window permutation test + block-bootstrap CIs. |
 | `robustness.py` | Threshold × window × LP-fork sweep. |
 | `make_series.py` | Build a long continuous daily series for the placebo test. |
+| `baselines.py` | Pairwise 1-skeleton graph metrics + the RQ3 side-by-side table. |
+| `profile.py` | RQ1 threshold-profile figure (skeleton vs nerve across the filtration). |
+| `landscapes.py` | Exact landscape-norm audit (verifies the "identically zero" claim). |
 | `_fetch.py` | Standalone chart-cache warmer (run once). |
 | `tests/test_toy.py` | Hand-checkable topology validation. |
-| `*_series.json` | Generated observables (reproducible evidence). |
+| `*_series.json`, `*_audit.json`, `rq1_profile.json` | Generated evidence. |
+| `figs/` | Committed figures (`rq1_profile.png`). |
 
 ## Quickstart
 
@@ -37,9 +41,13 @@ pip install --break-system-packages gudhi matplotlib
 python _fetch.py                                   # warm ~600-pool chart cache (once)
 python -m pytest tests/test_toy.py -q              # 8/8 topology assertions
 python pipeline.py --event 2023-03-11 --placebo 2023-06-15 --tag usdc_resolved
-python make_series.py --start 2022-06-01 --end 2023-12-31 --out long_series.json
+python make_series.py --start 2022-04-09 --end 2023-12-31 --out long_series.json
 python inference.py long_series.json --event 2023-03-11 --metric essB1
 python robustness.py --event 2023-03-11 --placebo 2023-06-15
+python baselines.py --event 2023-03-11 --placebo 2023-06-15    # pairwise RQ3 table
+python profile.py                                              # RQ1 central figure
+python landscapes.py                                           # landscape audit
+python pipeline.py --event 2022-05-10 --placebo 2023-06-15 --tag terra   # Terra
 ```
 
 `charts/` (the per-pool cache) and generated `*.png` figures are git-ignored; series JSONs

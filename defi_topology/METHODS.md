@@ -137,6 +137,62 @@ anomalous) is invariant to all three knobs.
 
 ---
 
+### 2.7 The pairwise baseline closes RQ3: nothing structural moves, at any order (`baselines.py`)
+
+RQ3 is a *relative* claim ("beyond pairwise"), so the pairwise side is now computed on
+exactly the same construction — the graph IS the 1-skeleton of the day's complex (asserted
+by a runtime selfcheck on V, E, and B₀). Seven graph metrics (E, density, components,
+transitivity, spectral radius unweighted and share-weighted, degree dispersion) go through
+the identical placebo-window permutation as the topology, over the same 632-day series:
+
+| metric (kind) | event percentile | p |
+|---|---|---|
+| E, density, n_comp, transitivity, spec_rad, w_spec_rad, deg_cv (graph) | 32–65% | 0.64–0.93 |
+| essB₁, gap, tp0, B₀ (topology) | 35–82% | 0.36–0.93 |
+
+**The USDC-depeg window is unremarkable on every metric of either kind.** The honest RQ3
+answer is therefore symmetric: it is not that topology fails where graphs succeed — the
+share-filtered co-membership structure is event-invariant at *every* order. What moves in
+a depeg is prices and flows, not structure. (Registry-drift note: the refreshed cache has
+599 vs 602 pools and the series now starts 2022-04-09; essB₁'s event percentile moved only
+48.8 → 53.6 — the null is stable under drift.)
+
+### 2.8 RQ1 measured: most loop structure is higher-order fills, and the fraction is falling (`profile.py`)
+
+The threshold-profile figure (`figs/rq1_profile.png`, the paper's central descriptive
+figure) sweeps the share threshold at five snapshot dates. At the operating threshold
+(1e-5), the fraction of 1-skeleton loops filled by ≥3-asset pools is:
+
+| 2022-05-10 | 2022-09-15 | 2023-03-11 | 2023-06-15 | 2023-12-15 |
+|---|---|---|---|---|
+| 77% | 69% | 71% | 64% | 52% |
+
+Two content claims: (i) **in the survivor-reconstructed universe, the majority of loop
+structure is genuinely higher-order** — the multi-way rhetoric is right about *composition*
+even though the object is dynamically inert; (ii) the fill fraction **trends down 77% →
+52%** over 19 months (not strictly monotonic), consistent with blueprint §6.0's
+metapool-era → pair-era hypothesis. Both claims are survivor-conditional: multi-asset
+survivors (3pool and kin) are old, large pools, so the level is likely biased up; the
+*trend* direction is the more defensible statement.
+
+### 2.9 Terra/UST: worse survivorship, perfect rigidity, and a placebo-test trap caught
+
+- **Survivorship 7.5%** (45/599 pools live on 2022-05-10), worse than USDC's 12.5%, as
+  predicted; the signal-bearing pools (UST, Anchor-adjacent) are delisted and invisible.
+- **The reconstructable structure is perfectly rigid through the crash: essB₁ = 3 and
+  cycle rank = 13 on all 61 days** of the window while universe TVL fell **52%**
+  ($11.4B → $5.5B). This upgrades the rigidity result: not even the largest collapse in
+  DeFi history moves a single loop of the survivor-reconstructed complex. Only tp0 drifts
+  (≈2.9 → 2.6 through crash week — mild merging), consistent with H₀ being the only
+  live dimension.
+- **Do not use the placebo percentiles for Terra.** The naive test returns "significant"
+  extremes (essB₁ 0th percentile, several graph metrics p ≈ 0.007) — but the Terra window
+  sits at the series' left edge and the universe grows monotonically (45 → 96 pools over
+  the span), so every size-correlated metric is mechanically extreme vs later placebos.
+  Exchangeability fails at the edge of a nonstationary series; these are trend artifacts,
+  not event effects, and the write-up must say so. The valid Terra evidence is the
+  within-window dynamics — which are flat.
+
 ## 3. Literature check (blueprint §4)
 
 - **arXiv:2607.10943 (Forte 2026), "It Takes Two to Tango…"** — **verified real and
@@ -160,9 +216,12 @@ anomalous) is invariant to all three knobs.
 ## 4. Honest bottom line (what this does to the paper)
 
 With the pipeline hardened, the RQ3 answer sharpens from RESULTS.md's "leaning against the
-headline hypothesis" to: **no topological observable distinguishes the largest stablecoin
-depeg on record from typical placebo windows, robustly across thresholds, windows, and
-both LP forks.** Two of the original three empirical findings weaken (finding 2's
+headline hypothesis" to: **no observable — topological or pairwise-graph — distinguishes
+the largest stablecoin depeg on record from typical placebo windows, robustly across
+thresholds, windows, and both LP forks; and the reconstructable structure is perfectly
+rigid even through Terra's 52% TVL collapse.** The compensating positive is §2.8: RQ1 has
+a real descriptive answer (a majority of loop structure is higher-order fills, with a
+declining trend) — the composition claim survives even though the dynamics claim dies. Two of the original three empirical findings weaken (finding 2's
 destabilization was partly an artifact; finding 3's H₀ signal does not survive a real
 placebo). The two strongest results are unchanged and now better supported:
 
