@@ -3,3 +3,4 @@ charts/
 __pycache__/
 !figs/
 !figs/*.png
+!paper/rq1_profile.png

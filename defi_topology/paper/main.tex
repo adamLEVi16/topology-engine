@@ -1,0 +1,400 @@
+\documentclass[11pt]{article}
+
+% --- arXiv-ready, Overleaf-trivial: only standard packages, manual bibliography ---
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{natbib}
+\usepackage{graphicx}
+\usepackage{booktabs}
+% lightweight siunitx substitutes (avoids the texlive-science dependency)
+\newcommand{\percent}{\%}
+\newcommand{\num}[1]{#1}
+\newcommand{\SI}[2]{#1\,#2}
+\newcommand{\SIrange}[3]{#1--#2\,#3}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xcolor}
+\usepackage{caption}
+\captionsetup{font=small,labelfont=bf}
+
+\title{\textbf{Higher-Order but Inert: The Topology of DeFi\\
+Stablecoin Liquidity Through the USDC and Terra Depegs}}
+
+% TODO: replace with your name before posting. Affiliation from project brief.
+\author{[Author Name]\\
+\small Department of [\ldots], Hofstra University\\
+\small \texttt{[email]}}
+
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+Multi-asset automated-market-maker pools (e.g.\ Curve's 3pool
+$\{$USDC,\,USDT,\,DAI$\}$) encode genuinely three-way relationships that a
+pairwise graph discards. We ask, using persistent homology of the
+\emph{nerve complex} of pool co-membership, (i) how much of the loop structure of
+Ethereum stablecoin liquidity is genuinely higher-order, and (ii) whether that
+structure moves through systemic stress. Working entirely from the free DeFiLlama
+API and a level-invariant (TVL-share) filtration that neutralises the mechanical
+TVL drawdown, we report a split result. \emph{Descriptively}, a majority of the
+independent loops in the 1-skeleton are filled by $\ge 3$-asset simplices
+(\SIrange{52}{77}{\percent} across snapshot dates), and this fraction trends down
+over 2022--2023---the multi-way rhetoric is right about \emph{composition}.
+\emph{Dynamically}, it is not: against a placebo-window permutation test over
+\num{632} daily complexes, the USDC-depeg window is statistically unremarkable on
+\emph{every} topological \emph{and} pairwise-graph observable
+($34$th--$82$nd percentile, all $p>0.35$), and through the Terra/UST collapse the
+reconstructable structure is perfectly rigid (essential $B_1=3$ and 1-skeleton
+cycle rank $=13$ on all \num{61} days while universe TVL fell \SI{52}{\percent}).
+We also document a methodological pitfall: on this object $H_1$ is entirely
+essential, so the standard persistence-landscape / $L^p$ summary is identically
+zero and must be replaced by essential Betti numbers and $H_0$ total persistence.
+All findings are \emph{survivor-conditional}: only \SIrange{7.5}{12.5}{\percent}
+of today's pools existed at the event dates, an upper bound on usable history, and
+this ceiling even renders one construction choice (LP-token resolution) empirically
+untestable. We read the null economically: stablecoins are near-substitutes pegged
+to a common numéraire, so their liquidity network is structurally shallow and
+price-stress-invariant. Code and data are fully reproducible.
+\end{abstract}
+
+\section{Introduction}
+
+Classical models of financial contagion are pairwise: institutions are nodes,
+bilateral exposures are edges \citep{eisenberg2001}. But a multi-asset AMM pool is
+an inherently multi-way object. Curve's 3pool binds $\{$USDC, USDT, DAI$\}$ into a
+single contract; a graph records only the three pairwise projections and throws away
+the joint membership. Higher-order network methods---hypergraphs and simplicial
+complexes \citep{bick2023}---are designed to retain exactly this information, and a
+nascent literature argues they matter for systemic risk
+\citep{forte2026}.
+
+The decisive reason to study this in decentralised finance (DeFi) rather than
+traditional finance is \emph{observability}: pool compositions and reserves are
+public and machine-readable on-chain, removing the confidentiality barrier that has
+always constrained structural contagion research. That, not the topology per se, is
+the strongest motivation for this work.
+
+We make the ``higher-order matters'' claim testable by measurement rather than
+rhetoric. For each daily snapshot we build the nerve complex of pool co-membership
+and compute the \textbf{skeleton-vs-nerve decomposition}: the cycle rank of the
+1-skeleton ($E-V+B_0$, the number of loops a graph would see) versus the Betti-1
+number $B_1$ of the nerve (the loops that survive once multi-asset pools fill their
+faces). Their difference is precisely the loop structure explained by genuine
+higher-order co-occurrence.
+
+Our contributions, and their honest weights, are:
+\begin{enumerate}
+\item \textbf{A structural (not return-space) topological measurement of DeFi
+liquidity} (Sec.~\ref{sec:rq1}). A majority of loops are higher-order, but the
+level is survivor-biased and only the downward \emph{trend} is defensible.
+\item \textbf{A rigorous event-study null} (Sec.~\ref{sec:rq3}). Neither topological
+nor pairwise-graph observables distinguish the USDC or Terra windows from placebo
+windows. The null is symmetric across orders and robust to thresholds, window sizes,
+and construction forks.
+\item \textbf{A methodological caveat} (Sec.~\ref{sec:landscape}). Persistence
+landscapes are identically zero here; this is expected given all-essential $H_1$,
+but it is a concrete pitfall for anyone porting the Gidea--Katz return-space toolkit
+\citep{gidea2018} to structural complexes.
+\item \textbf{An honest survivorship characterisation} (Sec.~\ref{sec:data}) severe
+enough to bound every claim and to render the LP-resolution design choice
+untestable from registry data.
+\end{enumerate}
+
+A rigorous negative on (2) is itself informative: it maps where higher-order
+structure does \emph{not} add value over pairwise methods, and we did not know this
+in advance.
+
+\section{Related work}
+
+\textbf{Higher-order finance} is early-stage. \citet{forte2026} give the first
+hypergraph analysis of bank--firm credit networks (Central Bank of Argentina credit
+registry, adjusted H-eigenvector centrality); this is TradFi credit and centrality,
+\emph{not} persistent homology and \emph{not} DeFi, and it establishes only that
+``higher-order beats pairwise'' is a live direction. \textbf{Return-space TDA} is by
+contrast saturated: persistent homology of return point clouds covers equities
+\citep{gidea2018}, FX, and cryptocurrency co-movements \citep{fx2025}. We keep this
+lineage strictly separate---our complex is built from \emph{structure}
+(co-membership), not return correlation. \textbf{Graph analysis of DeFi} exists:
+\citet{uniswap2025} model Uniswap as a token-node / pool-edge network and study
+centralisation and fragility. That is exactly the pairwise baseline our decomposition
+sits on top of, and we compute it head-to-head. To our knowledge the
+persistent-homology / nerve treatment of DeFi liquidity structure is previously
+unoccupied; \citet{tradefidefi2025} survey the surrounding systemic-risk landscape
+without it.
+
+\section{Data and the survivorship ceiling}
+\label{sec:data}
+
+We use two free, unauthenticated DeFiLlama endpoints: the pool registry
+(\texttt{yields.llama.fi/pools}: project, chain, symbol, \texttt{underlyingTokens},
+current TVL, stablecoin flag) and per-pool daily TVL history
+(\texttt{yields.llama.fi/chart/\{pool\}}, reaching back to $\approx$February 2022).
+The MVP universe is Ethereum, stablecoin-flagged pools with $2$--$8$ underlying
+tokens ($\approx\!600$ pools).
+
+\paragraph{Reconstruction and its key simplification.} A pool's token set is fixed at
+deployment, so the historical complex at date $t$ is today's registry filtered to
+pools with TVL above threshold at $t$. This removes subgraph/indexer dependencies
+from the critical path---but at a cost.
+
+\paragraph{The survivorship ceiling (carry into every claim).} Only \textbf{75 of
+$\approx$602 ($\approx$\SI{12.5}{\percent})} of today's pools were live at the USDC
+depeg (2023-03-11), and \textbf{45 of 599 (\SI{7.5}{\percent})} at the Terra crash
+(2022-05-10). Crucially these are \emph{upper bounds on usable history}
+(``how many current pools are old enough''), not true survivorship: pools delisted
+before today are unrecoverable from this API, and for Terra the signal-bearing pools
+(UST, Anchor-adjacent) are precisely the delisted ones. Every result below is
+survivor-conditional, and we flag where this most threatens interpretation.
+
+\section{Method}
+\label{sec:method}
+
+\paragraph{Complex.} Vertices are tokens (keyed by contract address). A pool with
+token set $\sigma$ contributes the filled simplex on $\sigma$ (downward closure
+taken): a 2-token pool is an edge, a 3-token pool a filled triangle, and so on. This
+is the \emph{nerve}, not a flag complex---observed loops are genuine coverage holes,
+the economically meaningful object. We track $B_0$ (fragmentation), essential $B_1$
+(loops), $B_2$ (voids; found $\equiv 0$), the 1-skeleton cycle rank $E-V+B_0$, the
+higher-order \emph{gap} $=(E-V+B_0)-B_1$, and $H_0$ total persistence (a merging /
+flight-to-coordination proxy).
+
+\paragraph{Filtration (the TVL confound).} Raw dollar TVL craters mechanically in a
+depeg because price craters, so a TVL-filtered complex would shrink for reasons of
+price, not structure---a laundered copy of the drawdown baseline. We therefore filter
+by each pool's \emph{share} of universe TVL at date $t$, entering strong pools first
+at $f=-\log_{10}(\text{share})$. A result that dies under share weighting is a price
+artefact; ours are reported on share weights throughout, with raw-TVL as a checked
+robustness fork.
+
+\paragraph{Inference (non-parametric only).} With $N=2$ events no cross-event or
+parametric machinery is valid. We use a \textbf{placebo-window permutation test}:
+slide the $[-30,+30]$-day window across every non-overlapping centre date in a
+\num{632}-day baseline (2022-04 to 2023-12) and locate the event window's statistic
+in that placebo distribution, reporting a two-sided empirical $p$ and percentile.
+Because the series is near-piecewise-constant we also report circular block-bootstrap
+CIs and a run-length diagnostic, and---critically---an empirical $p$-value floor
+$1/(\#\text{placebos})$ so the test cannot over-claim.
+
+\paragraph{Baselines and validation.} We compute seven pairwise 1-skeleton graph
+metrics (edges, density, components, transitivity, spectral radius, share-weighted
+spectral radius, degree dispersion) on the identical construction---the graph is
+\emph{asserted at runtime} to be the 1-skeleton of the same complex ($V,E,B_0$
+agree)---and put them through the same placebo test, so RQ3 is answered head-to-head.
+Topology code is validated on hand-checkable toy complexes (a hollow triangle has one
+loop; a filled one none; a tetrahedron boundary has $B_2=1$), and construction knobs
+(dust cap, window size, LP fork) are swept for robustness.
+
+\paragraph{The LP-resolution fork, and why it is moot.} Curve metapools nominally read
+$\{X, \text{3CRV}\}$; whether 3CRV is one vertex or resolved to $\{$USDC,USDT,DAI$\}$
+changes the complex. We implement both. But DeFiLlama's \texttt{underlyingTokens}
+already returns base assets, and \textbf{zero of $\approx$600 current pools embed the
+3CRV triple as a strict subset}---the metapools the fork would act on did not survive.
+The two forks are therefore identical on all real data; the choice is untestable from
+registry reconstruction, a direct casualty of survivorship.
+
+\section{Results}
+
+\subsection{Descriptive: liquidity is higher-order in composition (RQ1)}
+\label{sec:rq1}
+
+Figure~\ref{fig:profile} plots the skeleton-vs-nerve decomposition across the share
+filtration at five snapshot dates. At the operating threshold ($10^{-5}$), the
+fraction of 1-skeleton loops filled by $\ge 3$-asset pools is:
+
+\begin{center}
+\begin{tabular}{lccccc}
+\toprule
+date & 2022-05-10 & 2022-09-15 & 2023-03-11 & 2023-06-15 & 2023-12-15 \\
+\midrule
+higher-order fraction & \SI{77}{\percent} & \SI{69}{\percent} & \SI{71}{\percent}
+& \SI{64}{\percent} & \SI{52}{\percent} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Two claims. (i) \emph{In the survivor-reconstructed universe, a majority of loop
+structure is genuinely higher-order}: the multi-way rhetoric is correct about
+composition. (ii) The fraction \emph{trends down} $\SI{77}{\percent}\!\to\!\SI{52}{\percent}$
+over 19 months (not strictly monotone), consistent with a transition from the
+2022--23 Curve-metapool era toward a pair-dominated (Uniswap-era) regime. We
+emphasise the survivor-conditional caveat sharply here: multi-asset survivors are
+old, large pools, so the \emph{level} is likely biased upward; the \emph{trend}
+direction is the more defensible statement, and even it could in principle reflect
+differential delisting.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{rq1_profile.png}
+\caption{Skeleton-vs-nerve loop decomposition across the TVL-share filtration
+(deep liquidity on the left; dotted line is the operating threshold $10^{-5}$).
+Green: 1-skeleton cycle rank (loops a graph sees). Blue: nerve $B_1$ (loops
+surviving higher-order fills). Shaded: the higher-order gap. The gap is a large,
+persistent share of the loop structure at every date and in both crashes, but its
+\emph{shape} is essentially fixed---the central descriptive object of the paper.}
+\label{fig:profile}
+\end{figure}
+
+\subsection{Dynamic: nothing moves, at any order (RQ2/RQ3)}
+\label{sec:rq3}
+
+\paragraph{USDC depeg.} Table~\ref{tab:placebo} places the event window in the
+placebo distribution for every observable. \emph{The depeg window is unremarkable on
+all of them}: topological metrics land at the $35$th--$82$nd percentile and pairwise
+metrics at the $32$nd--$65$th, none approaching significance (all $p>0.35$;
+essential $B_1$ at the $54$th percentile, $p=0.93$). The honest RQ3 answer is
+therefore \emph{symmetric}: it is not that topology fails where graphs succeed---the
+share-filtered structure is event-invariant at \emph{every} order. Block-bootstrap
+95\% CIs are tight (essential $B_1\in[4.5,5.0]$) because the series is nearly
+constant (essential $B_1$ takes 11 distinct values with a 153-day longest run over
+the full span), and the result is stable under thresholds ($10^{-4}$--$10^{-6}$),
+window sizes ($30/45/60$ d) and both LP forks.
+
+\begin{table}[t]
+\centering
+\small
+\begin{tabular}{llcc}
+\toprule
+metric & kind & event percentile & two-sided $p$ \\
+\midrule
+edges                     & graph    & 64.7 & 0.71 \\
+density                   & graph    & 31.8 & 0.64 \\
+components                & graph    & 46.4 & 0.93 \\
+transitivity              & graph    & 46.4 & 0.93 \\
+spectral radius           & graph    & 53.6 & 0.93 \\
+weighted spectral radius  & graph    & 46.6 & 0.93 \\
+degree dispersion         & graph    & 53.6 & 0.93 \\
+\midrule
+essential $B_1$           & topology & 53.6 & 0.93 \\
+higher-order gap          & topology & 82.2 & 0.36 \\
+$H_0$ total persistence   & topology & 34.9 & 0.70 \\
+$B_0$                     & topology & 46.4 & 0.93 \\
+\bottomrule
+\end{tabular}
+\caption{Placebo-window permutation test for the USDC-depeg window (2023-03-11,
+$[-30,+30]$~d) over 632 daily complexes. No metric of either kind is anomalous.}
+\label{tab:placebo}
+\end{table}
+
+\paragraph{Terra/UST.} The reconstructable structure is \emph{perfectly rigid}
+through the collapse: essential $B_1=3$ and 1-skeleton cycle rank $=13$ on all
+\num{61} days of the window while universe TVL fell \SI{52}{\percent} ($\$11.4$B
+$\to\$5.5$B). Only $H_0$ total persistence drifts mildly ($\approx 2.9\!\to\!2.6$
+through crash week, consistent with slight merging). This is the strongest form of
+the rigidity result---the largest collapse in DeFi history does not move a single
+loop of the survivor-reconstructed complex.
+
+\paragraph{A placebo-test trap we flag rather than exploit.} The naive permutation
+test returns spuriously ``significant'' Terra extremes (essential $B_1$ at the $0$th
+percentile; several graph metrics $p\approx 0.007$). These are artefacts: the Terra
+window sits at the left edge of a \emph{non-stationary} series in which the universe
+grows monotonically ($45\!\to\!96$ pools over the span), so every size-correlated
+metric is mechanically extreme against later placebos. Exchangeability fails at the
+series edge; we therefore rely only on the within-window dynamics for Terra, which
+are flat. We report this because it is exactly the kind of edge-effect that produces
+false positives in short-series event studies.
+
+\subsection{Methodological: persistence landscapes are degenerate here}
+\label{sec:landscape}
+
+Under the share filtration, \emph{every} $H_1$ class is essential: across all
+\num{579} days of an 18-month span (and in both event windows) there are
+\textbf{zero finite $H_1$ bars}. A loop that forms among strong pools is never closed
+by a weaker one. Consequently the standard persistence-landscape / $L^p$ summary---on
+which essentially all return-space TDA-in-finance work runs---evaluates to
+\emph{identically zero} in $H_1$ (exact $L_1=L_2=L_\infty=0$, every day) under the
+usual convention of discarding infinite bars. Truncating infinite bars at a cutoff
+makes the norm nonzero but arbitrary: it shifts $\sim\!10\%$ with the (unprincipled)
+cutoff choice and still does not separate event from placebo ($L_2$ mean $1.22$ vs
+$1.25$). An $H_0$ control (which has genuine finite bars) yields nonzero landscapes
+($L_2\approx 0.62$ vs $0.46$), confirming the machinery is not broken---the
+degeneracy is specific to $H_1$ on this object.
+
+We are candid about the weight of this: that landscapes discard essential classes is
+textbook, and all-essential $H_1$ is a fairly direct consequence of the construction.
+The contribution is a \emph{practitioner's caveat}: apply the Gidea--Katz pipeline
+naively to a structural liquidity complex and you will read identically zero and
+wrongly conclude ``no topology.'' The correct observables are essential Betti numbers
+and $H_0$ total persistence, which is what we track.
+
+\section{Discussion}
+
+The descriptive and dynamic findings resolve cleanly under one economic reading.
+Stablecoins are near-perfect substitutes pegged to a \emph{common numéraire} (the US
+dollar). The liquidity network is thus a hub-and-spoke around ``dollar-ness''---mostly
+copies of the 3pool and shallow wrappers---rather than a rich web of distinct
+multi-way dependencies. Two consequences follow directly: the multi-way
+\emph{composition} is real (pools genuinely bundle three-plus dollars, hence the large
+gap), but the \emph{shape is baked in and near-static}, because a depeg plays out as
+prices and flows moving \emph{within} a fixed co-membership scaffold, not as the
+scaffold rewiring. Topology detects shape; when shape does not change, topology---at
+any order---has nothing to detect beyond what $H_0$/connectivity (already a pairwise
+quantity) captures.
+
+This delimits where structural higher-order TDA might pay off: slower, deeper regime
+changes that actually re-wire membership (protocol migrations, sustained
+delistings); non-substitute asset universes (mixed collateral, cross-asset lending)
+where multi-way dependencies are heterogeneous; and---above all---\emph{de-censored}
+data in which the pools that die during a crisis remain in the complex. None of these
+are reachable from the free registry endpoint alone.
+
+\section{Limitations}
+
+\begin{itemize}
+\item \textbf{Survivorship} is pervasive and unfixable with this source: 7.5--12.5\%
+usable-history \emph{upper} bounds, true dead-fractions unrecoverable, and one design
+fork (LP resolution) rendered untestable. All claims are survivor-conditional.
+\item \textbf{$N=2$ events}, both survivor-censored; no cross-event inference. The
+Terra placebo percentiles are invalid (edge effect) and we do not use them.
+\item \textbf{Single chain, stablecoins only}; the RQ1 \emph{level} is survivor-biased
+upward and only the trend is defensible.
+\item \textbf{Construction choices} (nerve vs.\ flag; share filtration; $10^{-5}$ dust
+cap; 3-day forward-fill for data gaps) are defended and swept but not exhaustive.
+\item The \textbf{methodological caveat is expected}, not deep; we frame it as a
+pitfall, not a theorem.
+\end{itemize}
+
+\section{Conclusion}
+
+Measured rather than asserted, the higher-order structure of Ethereum stablecoin
+liquidity is substantial in \emph{composition} (a majority of loops are higher-order
+fills, with a declining trend) but \emph{inert} in dynamics: neither topological nor
+pairwise-graph observables distinguish the USDC or Terra depegs from ordinary windows,
+and the structure is perfectly rigid through a 52\% TVL collapse. The right summary is
+essential Betti numbers, not persistence landscapes, which degenerate here. The honest
+thesis is that a network of common-numéraire substitutes is structurally shallow and
+price-stress-invariant---a clean delimitation, on public and reproducible data, of
+where higher-order topology does and does not add value over pairwise methods, subject
+throughout to a severe survivorship ceiling.
+
+\section*{Reproducibility}
+All code, cached observables, and figures are available at
+\url{https://github.com/adamLEVi16/topology-engine} (\texttt{defi\_topology/}). The
+pipeline runs from the free DeFiLlama API with no authentication; toy-complex tests
+pin the topology, and every number above is regenerated by a single script per
+result. Pre-registered observable set: $\{B_0, \text{essential }B_1, \text{gap},
+H_0\text{ total persistence}\}$.
+
+\begin{thebibliography}{9}
+\small
+\bibitem[Bick et al.(2023)]{bick2023} Bick, C., Gross, E., Harrington, H.~A., Schaub,
+M.~T. (2023). What are higher-order networks? \emph{SIAM Review} 65(3).
+\bibitem[Eisenberg \& Noe(2001)]{eisenberg2001} Eisenberg, L., Noe, T.~H. (2001).
+Systemic risk in financial systems. \emph{Management Science} 47(2).
+\bibitem[Forte(2026)]{forte2026} Forte, F.~D. (2026). It takes two to tango, but more
+to assess systemic risk: credit networks through the lens of hypergraphs.
+arXiv:2607.10943.
+\bibitem[Gidea \& Katz(2018)]{gidea2018} Gidea, M., Katz, Y. (2018). Topological data
+analysis of financial time series: landscapes of crashes. \emph{Physica A} 491.
+\bibitem[FX co-movements(2025)]{fx2025} Topology of currencies: persistent homology
+for FX co-movements (2025). arXiv:2510.19306. [\emph{verify author list before posting}]
+\bibitem[Uniswap network(2025)]{uniswap2025} Network analysis of Uniswap:
+centralization and fragility in the decentralized exchange market (2025).
+arXiv:2503.07834. [\emph{verify author list before posting}]
+\bibitem[TradFi/DeFi survey(2025)]{tradefidefi2025} Mapping microscopic and systemic
+risks in TradFi and DeFi: a literature review (2025). arXiv:2508.12007.
+[\emph{verify author list before posting}]
+\end{thebibliography}
+
+\end{document}
