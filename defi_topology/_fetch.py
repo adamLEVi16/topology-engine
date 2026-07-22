@@ -29,12 +29,13 @@ def main():
     def one(u):
         fn = f"{CHART_DIR}/{u['pool']}.json"
         if os.path.exists(fn):
-            return
+            return None
         try:
             d = _get(f"https://yields.llama.fi/chart/{u['pool']}")["data"]
             json.dump([(c["timestamp"][:10], c.get("tvlUsd") or 0) for c in d], open(fn, "w"))
-        except Exception:
-            pass
+            return None
+        except Exception as e:
+            return f"{u['pool']}: {type(e).__name__}: {e}"
 
     for r in range(8):
         miss = [u for u in uni if not os.path.exists(f"{CHART_DIR}/{u['pool']}.json")]
@@ -42,7 +43,9 @@ def main():
             break
         print(f"fetch round {r}: {len(miss)} remaining", flush=True)
         with ThreadPoolExecutor(max_workers=6) as ex:
-            list(ex.map(one, miss))
+            errs = [e for e in ex.map(one, miss) if e]
+        if errs:
+            print(f"  {len(errs)} failures this round (e.g. {errs[0][:100]})", flush=True)
         time.sleep(3)
     have = len([u for u in uni if os.path.exists(f"{CHART_DIR}/{u['pool']}.json")])
     print(f"DONE charts cached: {have}/{len(uni)}", flush=True)

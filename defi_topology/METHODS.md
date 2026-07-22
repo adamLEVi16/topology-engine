@@ -81,6 +81,11 @@ snapshots or on-chain data (Dune/subgraphs) — the dependency §5 deferred.
 
 ### 2.4 Against a proper placebo distribution, no observable makes the depeg window abnormal
 
+> **[Superseded]** The numbers in this subsection are from the first run (520 placebo
+> windows, 2022-06–2023-12 span, pre-correction test). The canonical current values —
+> longer span, and the corrected event-disjoint/full-window test from the external code
+> review — are in §2.7 and §2.10. The conclusion is unchanged.
+
 The original "matched control" was the **adjacent** pre-event window (Dec 12–Feb 10),
 i.e. the same continuous series, sharing dates with the event window. Replaced with a
 placebo-window permutation test: slide the [−30,+30] window across every non-overlapping
@@ -147,8 +152,11 @@ the identical placebo-window permutation as the topology, over the same 632-day 
 
 | metric (kind) | event percentile | p |
 |---|---|---|
-| E, density, n_comp, transitivity, spec_rad, w_spec_rad, deg_cv (graph) | 32–65% | 0.64–0.93 |
-| essB₁, gap, tp0, B₀ (topology) | 35–82% | 0.36–0.93 |
+| E, density, n_comp, transitivity, spec_rad, w_spec_rad, deg_cv (graph) | 34–63% | 0.67–0.91 |
+| essB₁, gap, tp0, B₀ (topology) | 31–84% | 0.32–0.91 |
+
+(Values under the corrected event-disjoint, full-window test of §2.10: 451 sliding
+placebos, ≈7 disjoint-equivalent.)
 
 **The USDC-depeg window is unremarkable on every metric of either kind.** The honest RQ3
 answer is therefore symmetric: it is not that topology fails where graphs succeed — the
@@ -186,12 +194,46 @@ survivors (3pool and kin) are old, large pools, so the level is likely biased up
   (≈2.9 → 2.6 through crash week — mild merging), consistent with H₀ being the only
   live dimension.
 - **Do not use the placebo percentiles for Terra.** The naive test returns "significant"
-  extremes (essB₁ 0th percentile, several graph metrics p ≈ 0.007) — but the Terra window
+  extremes (essB₁ 0th percentile; several graph metrics at the empirical floor, p < 0.003
+  under the corrected §2.10 test) — but the Terra window
   sits at the series' left edge and the universe grows monotonically (45 → 96 pools over
   the span), so every size-correlated metric is mechanically extreme vs later placebos.
   Exchangeability fails at the edge of a nonstationary series; these are trend artifacts,
   not event effects, and the write-up must say so. The valid Terra evidence is the
   within-window dynamics — which are flat.
+
+### 2.10 External code review: one real bug fixed, one claim refuted empirically
+
+An independent review (Gemini) of the codebase produced two HIGH-priority findings.
+
+**Valid — placebo windows could overlap the event window (fixed).** The exclusion rule
+`|c − ev| < half` admitted placebos sharing up to `half` days with the event window.
+Overlapping placebos are dragged toward the event statistic and pad the middle of the
+reference distribution — a bias *toward* the null we claim, so it mattered. Fix
+(`inference.py`): placebos must now be fully disjoint from the event window
+(`|c − ev| > 2·half`) and all windows (event and placebo) must be full-length, which
+also evicts truncated series-edge windows from the reference distribution. A new
+`n_disjoint_equivalent` diagnostic reports the autocorrelation-honest effective sample
+(451 sliding placebos ≈ 7 disjoint-equivalent for the 632-day series). Rerun deltas:
+USDC essB₁ 53.6→54.5th pct (p 0.93→0.91), gap 82.2→84.0 (p 0.36→0.32), tp0 34.9→30.8
+(p 0.70→0.62); graph metrics 34–63rd pct. **Conclusion unchanged — the null survives
+its own audit.** Terra's invalid extremes became more extreme (empirical-floor p),
+reinforcing §2.9's warning.
+
+**Refuted — `initialize_filtration()` "must be called" before persistence.** Tested
+three ways on gudhi 3.13: (i) the API itself emits *"Since Gudhi 3.2, calling
+SimplexTree.initialize_filtration is unnecessary"*; (ii) an adversarial insertion-order
+complex (triangle inserted at high filtration, faces lowered afterwards) reproduces the
+hand-computed diagram exactly (H₁ bar (1.5, 3.0)) without it; (iii) on real days
+(2023-03-11, 2022-05-10, 2023-12-15) inserting pools in ascending vs descending share
+order yields identical Betti numbers and H₀ persistence, matching the pipeline. The
+finding reflects pre-3.2 documentation.
+
+Minor items adopted: fetch-failure logging (`_fetch.py`); sampled skeleton selfcheck
+during the long-series build and a cached-span mismatch warning (`baselines.py`).
+Declined: replacing the union-find's iterative path-halving with recursion — the
+implementation is correct (every node is queried through `find`), and recursion adds a
+depth limit for zero benefit.
 
 ## 3. Literature check (blueprint §4)
 

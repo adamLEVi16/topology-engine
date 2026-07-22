@@ -114,13 +114,18 @@ def selfcheck(charts, tok, ds):
     assert g["n_comp"] == st.betti_numbers()[0], f"B0 mismatch on {ds}"
 
 
-def build_range(charts, tok, start, end):
+def build_range(charts, tok, start, end, check_every=90):
+    """Daily graph metrics over [start, end]. Re-runs the skeleton selfcheck on a
+    sampled date every `check_every` appended days, so graph/complex parity is verified
+    across the evolving universe, not just at the event date."""
     rows, day = [], datetime.date.fromisoformat(start)
     d1 = datetime.date.fromisoformat(end)
     while day <= d1:
         r = day_graph(day.isoformat(), charts, tok)
         if r:
             rows.append(r)
+            if check_every and len(rows) % check_every == 0:
+                selfcheck(charts, tok, r["date"])
         day += datetime.timedelta(days=1)
     return rows
 
@@ -150,7 +155,12 @@ def main():
     print("selfcheck: 1-skeleton matches pipeline complex (V, E, B0)")
 
     if os.path.exists(args.out):
-        rows = json.load(open(args.out))["rows"]
+        blob = json.load(open(args.out))
+        rows = blob["rows"]
+        meta = blob.get("meta", {})
+        if (meta.get("start"), meta.get("end")) != (args.start, args.end):
+            print(f"WARNING: cached {args.out} spans {meta.get('start')}..{meta.get('end')} "
+                  f"but --start/--end request {args.start}..{args.end}; delete it to rebuild")
         print(f"loaded {args.out}: {len(rows)} days")
     else:
         rows = build_range(charts, tok, args.start, args.end)

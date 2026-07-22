@@ -37,18 +37,25 @@ def _index_by_date(series):
     return out
 
 
-def _window_rows(by_date, center, half):
-    """Contiguous rows in [center-half, center+half]; None if fewer than half the days
-    are present (a window straddling a data void is not a valid placebo)."""
+def _window_rows(by_date, center, half, full=True):
+    """Contiguous rows in [center-half, center+half]. With full=True (the default, used
+    for both the event window and every placebo) all 2*half+1 days must be present, so
+    truncated series-edge windows never enter the reference distribution; full=False
+    tolerates gaps down to `half` present days."""
     days = [center + datetime.timedelta(d) for d in range(-half, half + 1)]
     rows = [by_date[d] for d in days if d in by_date]
-    return rows if len(rows) >= half else None
+    need = 2 * half + 1 if full else half
+    return rows if len(rows) >= need else None
 
 
 def placebo_permutation(series, event_date, metric, half=30, stat="mean"):
     """Empirical placebo test. `series` should be as LONG a continuous daily run as you
-    have (concatenate every calm span you trust). Returns dict with the event statistic,
-    the placebo distribution summary, percentile, and two-sided empirical p-value."""
+    have (concatenate every calm span you trust). Every window (event and placebo) must
+    be full-length, and placebo windows share NO days with the event window (centers
+    within 2*half of the event are excluded). Placebos still overlap each other — see
+    n_disjoint_equivalent in the result for the effective-sample honesty diagnostic.
+    Returns dict with the event statistic, the placebo distribution summary, percentile,
+    and two-sided empirical p-value."""
     by_date = _index_by_date(series)
     ev = datetime.date.fromisoformat(event_date)
     agg = {"mean": S.mean, "max": max, "min": min,
@@ -66,21 +73,29 @@ def placebo_permutation(series, event_date, metric, half=30, stat="mean"):
     all_days = sorted(by_date)
     placebos = []
     for c in all_days:
-        if abs((c - ev).days) < half:          # exclude windows overlapping the event
+        # Windows [c-half, c+half] and [ev-half, ev+half] share days iff
+        # |c-ev| <= 2*half. Placebos that overlap the event window are dragged toward
+        # the event statistic and pad the middle of the reference distribution —
+        # biasing TOWARD a null verdict — so they are excluded entirely.
+        if abs((c - ev).days) <= 2 * half:
             continue
         s = wstat(c)
         if s is not None:
             placebos.append(s)
     if not placebos:
-        raise ValueError("no admissible non-overlapping placebo windows in this series")
+        raise ValueError("no admissible event-disjoint placebo windows in this series")
 
     ge = sum(1 for s in placebos if s >= ev_stat)
     le = sum(1 for s in placebos if s <= ev_stat)
     n = len(placebos)
     p_two = min(1.0, 2 * min(ge, le) / n)
     pct = 100.0 * sum(1 for s in placebos if s < ev_stat) / n
+    # Placebo windows are event-disjoint but overlap EACH OTHER (they slide by one
+    # day), so they are autocorrelated: n overstates the information content. The
+    # disjoint-equivalent count is the honest effective-sample diagnostic.
     return dict(metric=metric, stat=stat, half=half, event_stat=ev_stat,
-                n_placebos=n, placebo_mean=S.mean(placebos),
+                n_placebos=n, n_disjoint_equivalent=n // (2 * half + 1),
+                placebo_mean=S.mean(placebos),
                 placebo_sd=S.pstdev(placebos) if n > 1 else 0.0,
                 placebo_min=min(placebos), placebo_max=max(placebos),
                 distinct_placebo_values=len(set(round(s, 6) for s in placebos)),
@@ -163,8 +178,8 @@ def main():
         res = placebo_permutation(series, args.event, args.metric, args.half, args.stat)
         print("\n--- placebo-window permutation test ---")
         for k in ("event_stat", "placebo_mean", "placebo_sd", "placebo_min", "placebo_max",
-                  "n_placebos", "distinct_placebo_values", "event_percentile",
-                  "p_value_two_sided", "p_value_floor"):
+                  "n_placebos", "n_disjoint_equivalent", "distinct_placebo_values",
+                  "event_percentile", "p_value_two_sided", "p_value_floor"):
             print(f"  {k:24s} {res[k]}")
     except ValueError as e:
         print(f"\nplacebo test not runnable on this series: {e}")

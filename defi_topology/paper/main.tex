@@ -45,7 +45,7 @@ over 2022--2023---the multi-way rhetoric is right about \emph{composition}.
 \emph{Dynamically}, it is not: against a placebo-window permutation test over
 \num{632} daily complexes, the USDC-depeg window is statistically unremarkable on
 \emph{every} topological \emph{and} pairwise-graph observable
-($34$th--$82$nd percentile, all $p>0.35$), and through the Terra/UST collapse the
+($31$st--$84$th percentile, all $p>0.31$), and through the Terra/UST collapse the
 reconstructable structure is perfectly rigid (essential $B_1=3$ and 1-skeleton
 cycle rank $=13$ on all \num{61} days while universe TVL fell \SI{52}{\percent}).
 We also document a methodological pitfall: on this object $H_1$ is entirely
@@ -170,12 +170,14 @@ robustness fork.
 
 \paragraph{Inference (non-parametric only).} With $N=2$ events no cross-event or
 parametric machinery is valid. We use a \textbf{placebo-window permutation test}:
-slide the $[-30,+30]$-day window across every non-overlapping centre date in a
-\num{632}-day baseline (2022-04 to 2023-12) and locate the event window's statistic
-in that placebo distribution, reporting a two-sided empirical $p$ and percentile.
-Because the series is near-piecewise-constant we also report circular block-bootstrap
-CIs and a run-length diagnostic, and---critically---an empirical $p$-value floor
-$1/(\#\text{placebos})$ so the test cannot over-claim.
+slide the full-length $[-30,+30]$-day window across every centre date in a
+\num{632}-day baseline (2022-04 to 2023-12) whose window \emph{shares no days with
+the event window}, and locate the event window's statistic in that placebo
+distribution, reporting a two-sided empirical $p$ and percentile. Sliding placebos
+still overlap \emph{one another}, so alongside the placebo count ($n=451$) we report
+the disjoint-equivalent effective sample ($\approx 7$), circular block-bootstrap CIs,
+a run-length diagnostic, and---critically---an empirical $p$-value floor $1/n$ so the
+test cannot over-claim.
 
 \paragraph{Baselines and validation.} We compute seven pairwise 1-skeleton graph
 metrics (edges, density, components, transitivity, spectral radius, share-weighted
@@ -241,9 +243,9 @@ persistent share of the loop structure at every date and in both crashes, but it
 
 \paragraph{USDC depeg.} Table~\ref{tab:placebo} places the event window in the
 placebo distribution for every observable. \emph{The depeg window is unremarkable on
-all of them}: topological metrics land at the $35$th--$82$nd percentile and pairwise
-metrics at the $32$nd--$65$th, none approaching significance (all $p>0.35$;
-essential $B_1$ at the $54$th percentile, $p=0.93$). The honest RQ3 answer is
+all of them}: topological metrics land at the $31$st--$84$th percentile and pairwise
+metrics at the $34$th--$63$rd, none approaching significance (all $p\ge 0.32$;
+essential $B_1$ at the $55$th percentile, $p=0.91$). The honest RQ3 answer is
 therefore \emph{symmetric}: it is not that topology fails where graphs succeed---the
 share-filtered structure is event-invariant at \emph{every} order. Block-bootstrap
 95\% CIs are tight (essential $B_1\in[4.5,5.0]$) because the series is nearly
@@ -258,22 +260,24 @@ window sizes ($30/45/60$ d) and both LP forks.
 \toprule
 metric & kind & event percentile & two-sided $p$ \\
 \midrule
-edges                     & graph    & 64.7 & 0.71 \\
-density                   & graph    & 31.8 & 0.64 \\
-components                & graph    & 46.4 & 0.93 \\
-transitivity              & graph    & 46.4 & 0.93 \\
-spectral radius           & graph    & 53.6 & 0.93 \\
-weighted spectral radius  & graph    & 46.6 & 0.93 \\
-degree dispersion         & graph    & 53.6 & 0.93 \\
+edges                     & graph    & 63.0 & 0.74 \\
+density                   & graph    & 33.7 & 0.67 \\
+components                & graph    & 45.5 & 0.91 \\
+transitivity              & graph    & 45.5 & 0.91 \\
+spectral radius           & graph    & 54.5 & 0.91 \\
+weighted spectral radius  & graph    & 45.5 & 0.91 \\
+degree dispersion         & graph    & 54.5 & 0.91 \\
 \midrule
-essential $B_1$           & topology & 53.6 & 0.93 \\
-higher-order gap          & topology & 82.2 & 0.36 \\
-$H_0$ total persistence   & topology & 34.9 & 0.70 \\
-$B_0$                     & topology & 46.4 & 0.93 \\
+essential $B_1$           & topology & 54.5 & 0.91 \\
+higher-order gap          & topology & 84.0 & 0.32 \\
+$H_0$ total persistence   & topology & 30.8 & 0.62 \\
+$B_0$                     & topology & 45.5 & 0.91 \\
 \bottomrule
 \end{tabular}
 \caption{Placebo-window permutation test for the USDC-depeg window (2023-03-11,
-$[-30,+30]$~d) over 632 daily complexes. No metric of either kind is anomalous.}
+$[-30,+30]$~d) over 632 daily complexes. Placebo windows are full-length and share no
+days with the event window ($n=451$ sliding placebos, $\approx 7$
+disjoint-equivalent). No metric of either kind is anomalous.}
 \label{tab:placebo}
 \end{table}
 
@@ -287,7 +291,8 @@ loop of the survivor-reconstructed complex.
 
 \paragraph{A placebo-test trap we flag rather than exploit.} The naive permutation
 test returns spuriously ``significant'' Terra extremes (essential $B_1$ at the $0$th
-percentile; several graph metrics $p\approx 0.007$). These are artefacts: the Terra
+percentile; several graph metrics at the empirical floor, $p<0.003$). These are
+artefacts: the Terra
 window sits at the left edge of a \emph{non-stationary} series in which the universe
 grows monotonically ($45\!\to\!96$ pools over the span), so every size-correlated
 metric is mechanically extreme against later placebos. Exchangeability fails at the

@@ -61,8 +61,10 @@ These are load-bearing for the paper's claims; a defect here moves a number in t
    landscapes ≡ 0") depends on this being the intended semantics. `landscapes.py` counts
    finite vs infinite H₁ bars; confirm the split is computed correctly.
 3. **`inference.placebo_permutation` — exchangeability.** Windows slide across a 632-day
-   series; the event window is excluded via `abs(days) < half`, and a window needs `>= half`
-   present days to count. The **known failure mode is non-stationarity at the series edge**
+   series; placebo windows must be full-length and fully disjoint from the event window
+   (centers within `2*half` of the event are excluded — fixed after external review; see
+   METHODS.md §2.10), and `n_disjoint_equivalent` reports the autocorrelation-honest
+   effective sample. The **known failure mode is non-stationarity at the series edge**
    (universe grows 45→96 pools), which makes the *Terra* percentiles invalid — this is
    documented and the paper does not use them. Verify the two-sided p and the
    `p_value_floor = 1/n` guard. For USDC (mid-series) the test is used.
