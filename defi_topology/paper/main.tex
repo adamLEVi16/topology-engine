@@ -48,12 +48,15 @@ the registry endpoint, which we do over \num{36} snapshots (Oct 2022--May 2025).
 De-censoring also revives the LP-resolution fork that a survivor-only view cannot even
 run, because the relevant metapools have all delisted. Against this fragility of the
 descriptive metric, one result is robust to every choice we vary — survivorship, LP
-representation, and sampling cadence: through the March 2023 USDC depeg the reconstructed
-structure is \textbf{inert}, changing less than routine month-to-month drift. We read this
-economically (stablecoins are common-numéraire substitutes, so their liquidity scaffold is
-shallow and price-stress-invariant) and draw the methodological lesson: report the
-higher-order content of a DeFi network as a sensitivity range over survivorship and
-representation, never as a point estimate. Code and data are fully reproducible.
+representation, and sampling cadence: through \emph{both} the March 2023 USDC depeg and the
+July 2023 Curve/Vyper exploit the reconstructed structure is \textbf{inert}, changing less
+than routine month-to-month drift. An apparent signal at the exploit is traced to corrupted
+TVL in the single archive crawl captured mid-event and repaired away — a \emph{second}
+data-quality trap (beside survivorship) that registry-based reconstruction must guard. We
+read the null economically (stablecoins are common-numéraire substitutes, so their
+liquidity scaffold is shallow and price-stress-invariant) and draw the methodological
+lesson: report the higher-order content of a DeFi network as a sensitivity range over
+survivorship and representation, never as a point estimate. Code and data are fully reproducible.
 \end{abstract}
 
 \section{Introduction}
@@ -102,9 +105,12 @@ delisted pools included. Survivor-only reconstruction captures $\sim$1/10 of the
 survivorship; we separate the two contributions and show even the \emph{sign of the
 time-trend} is convention-dependent. De-censoring revives the otherwise-untestable
 LP-resolution fork.
-\item \textbf{A convention-robust null} (\S\ref{sec:null}): the reconstructed structure is
-inert through the USDC depeg under every choice we vary, and this is the one
-representation- and sample-independent structural statement the data supports.
+\item \textbf{A convention-robust null on two events} (\S\ref{sec:null}): the reconstructed
+structure is inert through \emph{both} the USDC depeg and the Curve/Vyper exploit under
+every choice we vary — the one representation- and sample-independent structural statement
+the data supports. Establishing it required a second data-quality guard: an integrity scan
+plus transient-dip repair that removes a spurious signal from the corrupted archive crawl
+captured mid-exploit.
 \end{itemize}
 
 A rigorous negative on the dynamics, and a demonstration that the descriptive metric is an
@@ -146,14 +152,17 @@ independent reviews of an earlier draft of this work) as an \emph{unrecoverable}
 \paragraph{De-censoring.} It is not unrecoverable. The Wayback Machine archived the
 registry endpoint roughly weekly from October 2022; each snapshot is the \emph{full}
 universe at that date — delisted pools included — with the identical schema. We fetch
-\num{36} archived snapshots (Oct 2022--May 2025, monthly with a weekly cluster around the
-depeg), rebuild the complex on the full historical universe, and, per snapshot, also
-restrict to pools surviving to today, isolating the survivorship effect at fixed
-representation. True survivorship rises from \SI{24}{\percent} to \SI{41}{\percent} over
-the period (mechanically — recent pools are likelier to persist); at the depeg only 66 of
-274 universe pools survive, and the 208 invisible pools were \SI{35}{\percent} of universe
-TVL (FRAX-3CRV \$474M, MIM/OUSD/TUSD/LUSD-3CRV, \ldots). Terra (May 2022) predates the
-archive and is not de-censorable; snapshots are weekly crawl dates, not daily.
+$\sim$\num{40} archived snapshots (Oct 2022--May 2025, monthly with weekly clusters around
+the USDC depeg and the July 2023 Curve/Vyper exploit), rebuild the complex on the full
+historical universe, and, per snapshot, also restrict to pools surviving to today,
+isolating the survivorship effect at fixed representation. True survivorship rises from
+\SI{24}{\percent} to \SI{41}{\percent} over the period (mechanically — recent pools are
+likelier to persist); at the depeg only 66 of 274 universe pools survive, and the 208
+invisible pools were \SI{35}{\percent} of universe TVL (FRAX-3CRV \$474M,
+MIM/OUSD/TUSD/LUSD-3CRV, \ldots). Terra (May 2022) predates the archive and is not
+de-censorable; snapshots are weekly crawl dates, not daily. One caveat we make operational
+below: a crawl captured during an acute event can carry corrupted TVL, so snapshots are run
+through an integrity scan (\S\ref{sec:null}).
 
 \section{Method}
 \label{sec:method}
@@ -176,12 +185,17 @@ the archive) into $\{$DAI,\,USDC,\,USDT$\}$. Today's API base-resolves, so the s
 reconstruction is implicitly the \emph{resolved} fork; the archive's native form makes
 \emph{lp\_vertex} — and thus the comparison — available for the first time.
 
-\paragraph{Event test.} With snapshots at weekly cadence we test the depeg
-non-parametrically: is the pre$\to$post-depeg change (2023-03-07 $\to$ 03-16) large
-relative to the distribution of all consecutive-snapshot changes across the series? We run
-it under both representations. (An earlier daily survivor-only analysis using a
-placebo-window permutation test over 632 daily complexes reaches the same null; we report
-the de-censored version as the primary evidence.)
+\paragraph{Event test and data-quality guard.} With snapshots at weekly cadence we test
+each event non-parametrically: is the pre$\to$post change large relative to the
+distribution of all consecutive-snapshot changes across the series? We run two events (the
+USDC depeg, 2023-03-07 $\to$ 03-16; the Curve/Vyper exploit, 2023-07-30 $\to$ 08-02) under
+both representations. Because a crawl captured mid-event can be corrupted, every snapshot
+first passes an \emph{integrity scan} (flag if universe TVL is $<0.6\times$ the median of
+its temporal neighbours); a flagged snapshot's \emph{transient dips} — pools materially
+live on both neighbours but $<0.5\times$ the smaller on the flagged crawl — are repaired by
+neighbour interpolation, the snapshot-level analogue of the daily gap-fill. (An earlier
+daily survivor-only analysis using a placebo-window permutation test over 632 daily
+complexes reaches the same null; we report the de-censored version as primary evidence.)
 
 \section{Results}
 
@@ -257,10 +271,11 @@ which explains it. Vertical line: the USDC depeg.}
 \subsection{The null is the robust part}
 \label{sec:null}
 
-Against all of that fragility, the dynamics are stable. Table~\ref{tab:null} runs the
-de-censored event test: the change across the depeg is \emph{smaller} than typical
-between-snapshot drift for every observable under \emph{both} representations — essential
-$B_1$ under resolved does not move at all.
+Against all of that fragility, the dynamics are stable — and stay stable on a second event
+and after data-quality control. Table~\ref{tab:null} runs the de-censored event test on the
+USDC depeg: the change is \emph{smaller} than typical between-snapshot drift for every
+observable under \emph{both} representations — essential $B_1$ under resolved does not move
+at all.
 
 \begin{table}[t]
 \centering\small
@@ -274,16 +289,32 @@ essential $B_1$, resolved & 0 & 0th & inert \\
 gap, resolved & 1 & 17th & inert \\
 \bottomrule
 \end{tabular}
-\caption{De-censored event test, full universe (2023-03-07 $\to$ 03-16). The largest
-stablecoin depeg on record moves the structure less than routine month-to-month drift,
-under both LP conventions.}
+\caption{De-censored event test, full universe (USDC depeg, 2023-03-07 $\to$ 03-16; one of
+two events --- see text for the Curve/Vyper exploit). The largest stablecoin depeg on
+record moves the structure less than routine month-to-month drift, under both LP
+conventions.}
 \label{tab:null}
 \end{table}
 
+\paragraph{A second event, and a data-quality trap.} The Curve/Vyper exploit (2023-07-30)
+at first appears to break the null: on the de-censored universe essential $B_1$ jumps
+$47\to55$ (90th percentile) under lp\_vertex and $31\to37$ under resolved. But the integrity
+scan flags the single 08-02 crawl as the \emph{only} anomaly in the series — universe TVL
+halves ($\$3.04$B$\to\$1.73$B) then recovers — and 77\% of that drop is $\sim$32
+transient-dipped pools, almost all FRAX (FRAX-USDC $\$435$M$\to\$73$M$\to\$451$M; FRAX-USDP
+$\$112$M$\to\$3$M$\to\$129$M): corrupted readings during the exploit, not a real drawdown
+(the exploit drained \$70M of \emph{ETH} pools, not stablecoins). Repairing the transient
+dips removes the signal entirely — essential $B_1$ returns to 48, its pre-event value — and
+the Curve window is inert. The null therefore holds on \textbf{$N=2$} events, each confirmed
+only after snapshot data QC. The episode is itself a result: \emph{archived registry
+snapshots crawled during acute events can manufacture spurious topological signals — a
+second data-quality trap beside survivorship, and one the naive analysis would have
+reported as the sought-after ``topology detects the exploit'' finding.}
+
 Unlike the descriptive fraction, the null is robust to every choice we can vary —
-survivorship, LP representation, and cadence. It directly refutes the natural objection
-that the survivor view looks rigid only because it omits the pools that broke: restoring
-all 208 dead pools, the structure is still inert.
+survivorship, LP representation, sampling cadence, and now two distinct stress events. It
+directly refutes the natural objection that the survivor view looks rigid only because it
+omits the pools that broke: restoring all 208 dead pools, the structure is still inert.
 
 \section{Discussion}
 
@@ -297,23 +328,33 @@ whether a metapool's dependence on the 3pool is one relationship (an LP vertex) 
 (ii) a depeg is prices and flows moving \emph{within} a fixed scaffold, not the scaffold
 re-wiring — hence the null.
 
-The transferable lesson is methodological. Registry-based reconstruction is the default in
-empirical DeFi network research, and it silently conditions on survival; we show that
-conditioning discards $\sim$90\% of the loop structure and, combined with an unremarked
-representation choice, can flip a headline descriptive claim. Both are cheap to address:
-de-censor via the Internet Archive, and report the representation sensitivity. Where
-structural higher-order TDA might still earn its keep is where these caveats bite less —
-non-substitute universes (mixed collateral, cross-asset lending) with heterogeneous
-multi-way dependence, and slow regime changes that actually re-wire membership.
+The transferable lesson is methodological, and it is three traps deep. Registry-based
+reconstruction is the default in empirical DeFi network research; it silently conditions on
+survival (discarding $\sim$90\% of the loop structure), it hides an unremarked representation
+choice (which, with survivorship, can flip a headline descriptive claim), and — as testing
+the Curve exploit revealed — a crawl captured during an acute event can carry corrupted TVL
+that \emph{manufactures} a topological signal. The last is the sharpest cautionary note: the
+naive pipeline would have reported the FRAX-glitch spike as the sought-after ``topology
+detects the exploit'' result. All three are cheap to address — de-censor via the Internet
+Archive, report the representation sensitivity, and run an integrity scan with transient-dip
+repair — but none is addressed by simply collecting more data. Where structural higher-order
+TDA might still earn its keep is where these caveats bite less: non-substitute universes
+(mixed collateral, cross-asset lending) with heterogeneous multi-way dependence, and slow
+regime changes that actually re-wire membership.
 
 \section{Limitations}
 \begin{itemize}
 \item \textbf{Two defensible conventions, no tie-breaker.} We report the range rather than
 adjudicate; a reader with a specific economic question (exposure vs.\ composability) should
 pick the matching convention and its number.
-\item \textbf{Terra (May 2022) is not de-censorable} — it predates the archive. Snapshots
-are weekly, so the de-censored event test is coarse (we corroborate with a daily
-survivor-only placebo permutation reaching the same null).
+\item \textbf{Two de-censorable events, one not.} The USDC depeg and the Curve/Vyper
+exploit are both inside the archive window and both give the null; Terra (May 2022)
+predates the archive and is not de-censorable. Snapshots are weekly, so the de-censored
+event test is coarse (we corroborate with a daily survivor-only placebo permutation
+reaching the same null).
+\item \textbf{Event-window data quality.} Crawls during acute events can carry corrupted
+TVL; we flag them with an integrity scan and repair transient dips by neighbour
+interpolation, but a denser crawl cadence or an independent TVL source would be firmer.
 \item \textbf{Ethereum stablecoins only.} The economic reading (common-numéraire
 substitutes) is exactly why the scaffold is shallow; other universes may differ, which is
 the point.
@@ -330,17 +371,20 @@ based DeFi network studies routinely leave unexamined, and even its time-trend f
 between conventions. Survivor-only reconstruction, the field default, sees roughly a tenth
 of the loop structure; Internet-Archive de-censoring recovers the rest and revives an
 otherwise-untestable representation fork. The one convention-independent structural result
-is a null: through the largest stablecoin depeg on record the reconstructed structure is
-inert, moving less than routine drift. Report higher-order DeFi structure as a sensitivity
-range, de-censor the registry, and treat the robust dynamics — not the fragile levels — as
-the finding.
+is a null: through both the largest stablecoin depeg on record and the Curve/Vyper exploit
+the reconstructed structure is inert, moving less than routine drift — and reaching that
+conclusion required catching a third trap, a corrupted event-window crawl that would
+otherwise have read as a spurious detection. Report higher-order DeFi structure as a
+sensitivity range, de-censor the registry, scan for event-window data corruption, and treat
+the robust dynamics — not the fragile levels — as the finding.
 
 \section*{Reproducibility}
 All code, cached observables, archived snapshots, and figures are at
 \url{https://github.com/adamLEVi16/topology-engine} (\texttt{defi\_topology/}). The pipeline
 runs from the free DeFiLlama API and the Internet Archive with no authentication;
 toy-complex tests pin the topology, and every number is regenerated by a single script per
-result (\texttt{decensor.py} for the de-censored series and the 2$\times$2).
+result (\texttt{decensor.py} for the de-censored series, the 2$\times$2, the event tests,
+and the integrity scan / \texttt{repair\_transient\_dips} data-quality guard).
 
 \begin{thebibliography}{9}
 \small
