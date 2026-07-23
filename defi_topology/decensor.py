@@ -1,35 +1,33 @@
 #!/usr/bin/env python3
 """
-De-censoring DeFi survivorship bias via the Internet Archive.
+De-censoring DeFi survivorship bias via the Internet Archive  (v2 engine).
 
-The whole paper (and both AI reviews) assumed pools delisted before today are
-UNRECOVERABLE from DeFiLlama, forcing a survivor-only reconstruction. That assumption
-is false: the Wayback Machine archived the registry endpoint (yields.llama.fi/pools)
-roughly weekly from Oct 2022 on, and each snapshot is the FULL universe at that date —
-including pools that later died — with the same schema (underlyingTokens, tvlUsd,
-stablecoin, chain).
+The paper's survivor-only reconstruction (and both AI reviews) assumed delisted pools
+are unrecoverable from DeFiLlama. They are not: the Wayback Machine archived
+`yields.llama.fi/pools` roughly weekly from Oct 2022, each snapshot being the FULL
+universe at that date -- dead pools included -- with the identical schema. This module
+rebuilds the nerve complex on the full historical universe and, per snapshot, isolates
+the survivorship effect by also restricting to pools that survive to today.
 
-This module fetches an archived registry snapshot for a date and builds the nerve
-complex two ways on the SAME snapshot (so representation is held constant and only
-survivorship varies):
-    - de-censored : every pool in the universe that day
-    - survivor    : only pools still in today's registry (what the paper could see)
+Pieces:
+  closest_snapshot / fetch_registry : locate + download an archived registry (cached,
+                                      gzip-aware) to archive/ (git-ignored).
+  observables                       : nerve-complex observables from a registry snapshot.
+  build_series                      : de-censored + survivor observables over a schedule
+                                      of target dates, deduped by actual snapshot.
 
-Caveats it is honest about:
-  * Terra (May 2022) predates the earliest snapshot (Oct 2022) — not de-censorable.
-  * Snapshots are ~weekly crawl dates, not daily; use for spot checks / coarse series,
-    not the daily [-30,+30] permutation.
-  * The 2022-23 archive represents Curve metapools with the LP token as its own vertex
-    (FRAX-3CRV = {FRAX, 3CRV}), whereas today's API base-resolves them. So comparisons
-    to the paper's base-resolved survivor numbers mix survivorship with representation;
-    the de-censored-vs-survivor comparison HERE is clean (one snapshot, one
-    representation). Controlling representation across eras is future work.
+Honest scope: snapshots are ~weekly crawl dates (not daily); Terra (May 2022) predates
+the archive; the 2022-23 archive keeps LP tokens as their own vertices (FRAX-3CRV =
+{FRAX, 3CRV}) whereas today's API base-resolves -- so within-archive comparisons are
+clean but cross-era ones need representation control (see resolve_archive_lp, WIP).
 
 Run:
-  python decensor.py --date 2023-03-07
+  python decensor.py --build --start 2022-10-01 --end 2025-06-01 --step 30 \
+                     --dense-start 2023-02-01 --dense-end 2023-04-20 --dense-step 7
   python decensor.py --series 2022-11-10 2023-03-07 2023-06-06 2023-11-28
 """
-import argparse, gzip, itertools, json, math, urllib.request
+import argparse, datetime, gzip, itertools, json, math, os, time, urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 import gudhi
 
@@ -37,8 +35,11 @@ import pipeline as P
 
 UA = {"User-Agent": "defi-topology-research"}
 ZERO = P.ZERO
+HERE = os.path.dirname(os.path.abspath(__file__))
+ARCHIVE_DIR = os.path.join(HERE, "archive")
 
 
+# ---------------------------------------------------------------- universe filter
 def toks(p):
     return sorted(set(t.lower() for t in (p.get("underlyingTokens") or []) if t and t.lower() != ZERO))
 
@@ -47,28 +48,45 @@ def is_universe(p):
     return p.get("chain") == "Ethereum" and p.get("stablecoin") and 2 <= len(toks(p)) <= 8
 
 
-def closest_snapshot(date_compact):
-    """date_compact: 'YYYYMMDD'. Returns (timestamp, url) of the nearest archived
-    registry snapshot, or (None, None)."""
+# ---------------------------------------------------------------- archive access
+def closest_snapshot(date_compact, retries=3):
+    """date_compact 'YYYYMMDD' -> (timestamp, url) of the nearest archived registry."""
     api = f"https://archive.org/wayback/available?url=yields.llama.fi/pools&timestamp={date_compact}"
-    r = json.load(urllib.request.urlopen(urllib.request.Request(api, headers=UA), timeout=60))
-    s = r.get("archived_snapshots", {}).get("closest", {})
-    return s.get("timestamp"), s.get("url")
+    for r in range(retries):
+        try:
+            resp = json.load(urllib.request.urlopen(urllib.request.Request(api, headers=UA), timeout=60))
+            s = resp.get("archived_snapshots", {}).get("closest", {})
+            return s.get("timestamp"), s.get("url")
+        except Exception:
+            time.sleep(2 * (r + 1))
+    return None, None
 
 
-def fetch_registry(timestamp):
-    """Fetch the raw archived JSON (via the id_ suffix, no Wayback toolbar) and parse.
-    Handles gzip-compressed archived responses."""
+def fetch_registry(timestamp, retries=3):
+    """Download (cached, gzip-aware) the raw archived registry for a snapshot timestamp.
+    Returns the parsed `data` list, or None on failure."""
+    os.makedirs(ARCHIVE_DIR, exist_ok=True)
+    fn = os.path.join(ARCHIVE_DIR, f"{timestamp}.json")
+    if os.path.exists(fn):
+        return json.load(open(fn))
     url = f"https://web.archive.org/web/{timestamp}id_/https://yields.llama.fi/pools"
-    raw = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=120).read()
-    if raw[:2] == b"\x1f\x8b":
-        raw = gzip.decompress(raw)
-    return json.loads(raw)["data"]
+    for r in range(retries):
+        try:
+            raw = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=150).read()
+            if raw[:2] == b"\x1f\x8b":
+                raw = gzip.decompress(raw)
+            data = json.loads(raw)["data"]
+            json.dump(data, open(fn, "w"))
+            return data
+        except Exception:
+            time.sleep(3 * (r + 1))
+    return None
 
 
+# ---------------------------------------------------------------- complex
 def observables(pools, minshare=P.MINSHARE):
-    """Nerve complex + observables directly from a registry snapshot (each pool carries
-    tvlUsd at the snapshot instant). Mirrors pipeline.build_complex exactly."""
+    """Nerve-complex observables from a registry snapshot (each pool carries tvlUsd at
+    the snapshot instant). Mirrors pipeline.build_complex exactly."""
     live = [(toks(p), (p.get("tvlUsd") or 0)) for p in pools
             if is_universe(p) and (p.get("tvlUsd") or 0) > 0]
     total = sum(t for _, t in live)
@@ -94,47 +112,93 @@ def observables(pools, minshare=P.MINSHARE):
     skel = E - V + C
     return dict(universe=len(live), pools=used, ho_pools=ho, V=V, E=E,
                 B0=b[0], essB1=b[1], essB2=b[2], skel=skel, gap=skel - b[1],
-                ho_fraction=round((skel - b[1]) / skel, 3) if skel else 0.0)
+                ho_fraction=round((skel - b[1]) / skel, 4) if skel else 0.0)
 
 
-def analyze_date(date_compact, today_ids):
-    ts, url = closest_snapshot(date_compact)
-    if not ts:
-        print(f"{date_compact}: no snapshot"); return None
-    reg = fetch_registry(ts)
-    uni = [p for p in reg if is_universe(p)]
-    surv = [p for p in uni if p["pool"] in today_ids]
-    full_o, surv_o = observables(uni), observables(surv)
-    return dict(snapshot=ts, n_universe=len(uni), n_survivor=len(surv),
-                true_survivorship=round(len(surv) / len(uni), 3) if uni else 0,
-                full=full_o, survivor=surv_o)
+# ---------------------------------------------------------------- schedule + series
+def month_targets(start, end, step_days=30):
+    d0 = datetime.date.fromisoformat(start); d1 = datetime.date.fromisoformat(end)
+    out, d = [], d0
+    while d <= d1:
+        out.append(d.strftime("%Y%m%d")); d += datetime.timedelta(days=step_days)
+    return out
+
+
+def cache_all(targets, workers=4):
+    """Resolve each target date to its nearest snapshot, download+cache, dedupe by the
+    actual snapshot timestamp. Returns {timestamp: data} for successful fetches."""
+    ts_set = {}
+    def resolve(t):
+        ts, _ = closest_snapshot(t)
+        return ts
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        for t, ts in zip(targets, ex.map(resolve, targets)):
+            if ts:
+                ts_set[ts] = None
+    uniq = sorted(ts_set)
+    print(f"  {len(targets)} targets -> {len(uniq)} distinct snapshots; downloading...")
+    def get(ts):
+        return ts, fetch_registry(ts)
+    got = {}
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        for ts, data in ex.map(get, uniq):
+            if data:
+                got[ts] = data
+    print(f"  cached {len(got)}/{len(uniq)} snapshots")
+    return got
+
+
+def build_series(targets, out="decensor_series.json"):
+    today_ids = {u["pool"] for u in P.universe()}
+    snaps = cache_all(targets)
+    rows = []
+    for ts in sorted(snaps):
+        data = snaps[ts]
+        uni = [p for p in data if is_universe(p)]
+        if not uni:
+            continue
+        surv = [p for p in uni if p["pool"] in today_ids]
+        date = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}"
+        rows.append({"date": date, "snapshot": ts,
+                     "n_universe": len(uni), "n_survivor": len(surv),
+                     "true_survivorship": round(len(surv) / len(uni), 4),
+                     "full": observables(uni), "survivor": observables(surv)})
+    json.dump(rows, open(out, "w"))
+    print(f"\nwrote {out}: {len(rows)} snapshots ({rows[0]['date']} .. {rows[-1]['date']})")
+    hdr = ("date", "univ", "surv", "sv%", "essB1 f/s", "gap f/s", "HOfrac f/s")
+    print(f"{hdr[0]:11s}{hdr[1]:>5}{hdr[2]:>5}{hdr[3]:>6}{hdr[4]:>13}{hdr[5]:>11}{hdr[6]:>15}")
+    for r in rows:
+        f, s = r["full"], r["survivor"]
+        eb = f"{f['essB1']}/{s['essB1']}"
+        gp = f"{f['gap']}/{s['gap']}"
+        hf = f"{f['ho_fraction']:.2f}/{s['ho_fraction']:.2f}"
+        print(f"{r['date']:11s}{r['n_universe']:>5}{r['n_survivor']:>5}"
+              f"{100*r['true_survivorship']:>5.0f}%{eb:>13}{gp:>11}{hf:>15}")
+    return rows
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--date", help="YYYY-MM-DD single date")
-    ap.add_argument("--series", nargs="+", help="multiple YYYY-MM-DD dates")
+    ap.add_argument("--build", action="store_true")
+    ap.add_argument("--start", default="2022-10-01")
+    ap.add_argument("--end", default="2025-06-01")
+    ap.add_argument("--step", type=int, default=30)
+    ap.add_argument("--dense-start", default=None)
+    ap.add_argument("--dense-end", default=None)
+    ap.add_argument("--dense-step", type=int, default=7)
+    ap.add_argument("--series", nargs="+")
+    ap.add_argument("--out", default="decensor_series.json")
     args = ap.parse_args()
-    today_ids = {u["pool"] for u in P.universe()}
-    dates = args.series or ([args.date] if args.date else ["2023-03-07"])
 
-    hdr = ("date", "snap", "trueUniv", "surv", "trueSv%",
-           "essB1 f/s", "gap f/s", "HOfrac f/s")
-    print(f"{hdr[0]:12s} {hdr[1]:>14} {hdr[2]:>8} {hdr[3]:>5} {hdr[4]:>7} "
-          f"{hdr[5]:>12} {hdr[6]:>10} {hdr[7]:>13}")
-    out = []
-    for d in dates:
-        r = analyze_date(d.replace("-", ""), today_ids)
-        if not r:
-            continue
-        f, s = r["full"], r["survivor"]
-        essb1 = f"{f['essB1']}/{s['essB1']}"
-        gap = f"{f['gap']}/{s['gap']}"
-        hof = f"{f['ho_fraction']}/{s['ho_fraction']}"
-        print(f"{d:12s} {r['snapshot']:>14} {r['n_universe']:>8} {r['n_survivor']:>5} "
-              f"{100*r['true_survivorship']:>6.1f}% {essb1:>12} {gap:>10} {hof:>13}")
-        out.append({"date": d, **r})
-    json.dump(out, open("decensor_series.json", "w"))
+    if args.build:
+        targets = month_targets(args.start, args.end, args.step)
+        if args.dense_start and args.dense_end:
+            targets += month_targets(args.dense_start, args.dense_end, args.dense_step)
+        build_series(sorted(set(targets)), args.out)
+    elif args.series:
+        build_series([d.replace("-", "") for d in args.series], args.out)
+    else:
+        build_series(["20230307"], args.out)
 
 
 if __name__ == "__main__":

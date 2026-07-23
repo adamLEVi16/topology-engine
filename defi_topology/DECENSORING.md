@@ -1,73 +1,71 @@
-# De-censoring the survivorship bias (the "fatal flaw" is measurable)
+# De-censoring the survivorship bias — the v2 result
 
 The paper, and both external AI reviews, treat delisted pools as **unrecoverable** from
 DeFiLlama, forcing a survivor-only reconstruction and bounding every claim by a
 7.5–12.5% survivorship ceiling. **That premise is false.** The Wayback Machine archived
-`yields.llama.fi/pools` roughly weekly from Oct 2022, each snapshot being the *full*
-universe at that date — dead pools included — with the identical schema. `decensor.py`
-uses this to rebuild the complex on the full historical universe.
+`yields.llama.fi/pools` roughly weekly from Oct 2022, each snapshot the *full* universe
+at that date — dead pools included — with the identical schema. `decensor.py` rebuilds
+the complex on the full historical universe; per snapshot it also restricts to pools
+that survive to today, so the **survivorship effect is isolated at fixed representation**.
 
-For each archived snapshot we build the nerve complex two ways, **holding token
-representation constant** (both from the same snapshot), so only survivorship varies:
+Evidence: a 36-snapshot series, Oct 2022 → May 2025 (`decensor_series.json`,
+`figs/decensor.png`), monthly with a weekly cluster around the USDC depeg.
 
-| date | true universe | survivors | true surv. | essB₁ (full / surv) | gap (full / surv) | HO-fraction (full / surv) |
-|---|---:|---:|---:|---:|---:|---:|
-| 2022-11-10 | 241 | 63 | 26% | **36 / 4** | 24 / 11 | **0.40 / 0.73** |
-| 2023-03-07 | 274 | 66 | 24% | **48 / 4** | 28 / 11 | **0.37 / 0.73** |
-| 2023-06-06 | 246 | 76 | 31% | **46 / 4** | 31 / 8 | **0.40 / 0.67** |
-| 2023-11-28 | 235 | 84 | 36% | **42 / 6** | 18 / 11 | **0.30 / 0.65** |
+## Three findings, all clean and reproducible
 
-## What is solid (clean, same-snapshot, reproducible)
+### 1. Survivor reconstruction sees ~1/10 of the loop structure
+Essential $B_1$ is **40–58 on the full universe vs 4–23 on survivors** at every date.
+The true universe is 3–4× the survivor universe (234–430 vs 63–178 pools; true
+survivorship 24–41%, itself far above the paper's 12.5% *upper bound*). The object the
+paper analysed was severely impoverished — at the depeg, 208 of 274 pools were invisible
+(35% of universe TVL: FRAX-3CRV \$474M, MIM/OUSD/TUSD/LUSD-3CRV, …).
 
-1. **Dead pools are recoverable.** The archive holds the full registry; `decensor.py`
-   reconstructs it. The "unrecoverable" premise underpinning the whole limitations
-   section is wrong.
+### 2. The paper's RQ1 headline is a survivorship artifact — in BOTH level and trend
+The paper claims *a majority (52–77%) of loops are higher-order fills, declining over
+2022–23*. De-censored:
 
-2. **Survivor reconstruction captured ~10% of the real loop structure.** essB₁ is
-   36–48 on the full universe vs **4–6** on survivors, every date. The object the paper
-   analysed was severely impoverished — the 208 dead pools at the depeg (35% of universe
-   TVL, incl. FRAX-3CRV $474M, MIM-3CRV, OUSD/TUSD/LUSD-3CRV) carried most of the loops.
+- **Level:** the higher-order fraction is **flat at 0.36 ± 0.04 — a minority**, every
+  snapshot, for 2.5 years. Not a majority. The real network is majority *pairwise*.
+- **Trend:** there is **no decline**. The survivor fraction falls 0.73 → 0.39, but that
+  is the survivor sample converging to the truth as survivorship rises:
+  **corr(survivor higher-order fraction, survivorship %) = −0.92.** The "declining
+  higher-order structure" is manufactured by the changing sample, not by the network.
 
-3. **The RQ1 headline is inverted — and it was a survivorship artifact.** The paper
-   claims *a majority (52–77%) of loops are higher-order fills*. The survivor-subset here
-   reproduces that (0.65–0.73), **but the de-censored fraction is 0.30–0.40 — a
-   minority.** Survivors are disproportionately the big multi-asset pools (3pool + wrapped
-   copies), which inflates the higher-order share; the many dead *pairwise* metapool
-   edges (FRAX–3CRV, etc.) make the true structure majority-pairwise. **Corrected finding:
-   most of the loop structure is pairwise — the multi-way rhetoric is *less* supported
-   than the paper concluded, not more.**
+So the multi-way rhetoric is **less** supported than the paper concluded, not more, and
+its temporal story dissolves entirely. This is the strongest single result in the project
+because it is a cautionary finding about a *method* — survivor-based registry
+reconstruction, used across DeFi network research — not just about this dataset.
 
-4. **The null survives de-censoring.** Across the immediate depeg (2023-03-07 → 2023-03-12,
-   both full universes) essB₁ 48→50 and gap 28→28 — inert, exactly as the survivor view
-   showed. This **directly refutes the reviewers' central criticism** ("it only looks
-   rigid because you see survivors"): restore the dead pools and it is still rigid at the
-   event timescale.
+### 3. The null survives de-censoring (the reviewers' core critique fails)
+Across the depeg at weekly resolution (Feb–Apr 2023, full universe) essential $B_1$ holds
+at ~47 and the gap at ~28 — inert, exactly as the survivor view showed. Restoring all 208
+dead pools does **not** reveal hidden dynamics: the structure is rigid even when you can
+see everyone. This directly refutes "it only looks rigid because you see survivors."
 
-## What is preliminary (needs a proper snapshot series before it goes in the paper)
+## Corrections to my own earlier read (honesty log)
+- The 4-snapshot peek suggested a late-2023 *erosion* of higher-order structure. The full
+  36-snapshot series shows **no erosion** — the de-censored fraction is flat. Retracted.
+- True survivorship is not one number: it rises 24% → 41% from 2022 to 2025 (mechanical —
+  recent pools are more likely to still exist). The paper's "12.5%" was a different, and
+  looser, quantity.
 
-- **A longer-arc erosion of higher-order structure** is suggested (gap 28→18, HO-fraction
-  0.40→0.30, ho-pools 33→22 from mid-2023 to late-2023) but rests on four noisy weekly
-  snapshots. Indicative, not established.
-- Snapshots are ~weekly crawl dates, not daily, so the daily [−30,+30] placebo permutation
-  cannot yet be run on de-censored data.
-- **Representation across eras:** the 2022–23 archive keeps LP tokens as their own
-  vertices (FRAX-3CRV = {FRAX, 3CRV}); today's API base-resolves them. The de-censored
-  vs survivor comparison above is clean (one snapshot, one representation), but comparing
-  de-censored history to today needs this controlled. This also means the archive
-  *naturally realises the "LP-token-as-vertex" fork the paper called untestable* —
-  another claim to revisit.
-- Terra (May 2022) predates the earliest snapshot (Oct 2022) and is not de-censorable
-  here.
+## Still open / WIP (for the v2 paper)
+- **LP-token representation.** The 2022–23 archive keeps LP tokens as their own vertices
+  (FRAX-3CRV = {FRAX, 3CRV}); today's API base-resolves. Within-archive comparisons above
+  are clean; cross-era ones need this controlled. Bonus: the archive *naturally realises
+  the "LP-token-as-vertex" fork the paper called untestable* — so that fork can now be run
+  (`resolve_archive_lp`, to build).
+- **A de-censored placebo/event test** at the ~weekly snapshot cadence (coarser than the
+  daily survivor series, but on the real universe).
+- **Terra** (May 2022) predates the archive and remains non-de-censorable here.
 
-## What this does to the paper
+## What this does to the paper (v2 reframing)
+- **New centerpiece + method:** web-archive de-censoring of DeFi registry survivorship.
+- **RQ1 corrected:** majority→minority, and the decline is shown to be an artifact
+  (Fig. `decensor.png`).
+- **Null strengthened:** rigidity holds on the full universe through the depeg.
+- **Unchanged headline:** still not "topology predicts crashes"; the event-time null is
+  simply now robust rather than survivor-limited.
 
-- **Corrects** RQ1 (majority → minority higher-order) and shows the original number was a
-  survivorship artifact.
-- **Strengthens** the null: rigidity holds on the de-censored universe at the event.
-- **Adds a genuinely novel method** — web-archive de-censoring of DeFi registry
-  survivorship — that applies to *any* registry-based DeFi network study, not just this
-  one. This is the most transferable contribution in the project.
-- **Does not** overturn the headline: this is still not "topology predicts crashes." The
-  event-time null is now stronger, and the descriptive story is corrected and cleaner.
-
-Reproduce: `python decensor.py --series 2022-11-10 2023-03-07 2023-06-06 2023-11-28`
+Reproduce: `python decensor.py --build --start 2022-10-01 --end 2025-06-01 --step 30
+--dense-start 2023-02-01 --dense-end 2023-04-20 --dense-step 7 && python decensor_fig.py`
