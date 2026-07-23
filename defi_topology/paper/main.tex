@@ -254,9 +254,10 @@ in the network.
 
 So the paper-standard ``a majority of loops are higher-order, declining over 2022--23''
 sits at the high-inflation corner; the de-censored, composability-preserving reading is a
-flat minority. Neither convention is uniquely correct (resolving reflects economic exposure
-to base assets; lp\_vertex reflects composability structure). \textbf{The honest answer to
-``how much is higher-order?'' is the range in Table~\ref{tab:2x2}, not a number.}
+flat minority (Fig.~\ref{fig:repr}). Neither convention is uniquely correct (resolving
+reflects economic exposure to base assets; lp\_vertex reflects composability structure).
+\textbf{The honest answer to ``how much is higher-order?'' is the range in
+Table~\ref{tab:2x2}, not a number.}
 
 \begin{figure}[t]
 \centering
@@ -266,6 +267,17 @@ manufactures a declining higher-order trend (bottom) that the de-censored full u
 (blue/green) does not show; the survivor decline tracks rising survivorship (grey dashed),
 which explains it. Vertical line: the USDC depeg.}
 \label{fig:decensor}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{representation.png}
+\caption{The \emph{same} de-censored universe reads as majority- or minority-higher-order
+purely by LP-token representation. Resolving 3CRV to base assets (red) keeps the fraction
+a declining majority ($>0.5$); keeping 3CRV as its own vertex (green) keeps it a flat
+minority ($<0.5$). The two conventions sit on opposite sides of the majority line for the
+entire period, converging only as the metapool structure dissolves.}
+\label{fig:repr}
 \end{figure}
 
 \subsection{The null is the robust part}
@@ -304,12 +316,24 @@ halves ($\$3.04$B$\to\$1.73$B) then recovers — and 77\% of that drop is $\sim$
 transient-dipped pools, almost all FRAX (FRAX-USDC $\$435$M$\to\$73$M$\to\$451$M; FRAX-USDP
 $\$112$M$\to\$3$M$\to\$129$M): corrupted readings during the exploit, not a real drawdown
 (the exploit drained \$70M of \emph{ETH} pools, not stablecoins). Repairing the transient
-dips removes the signal entirely — essential $B_1$ returns to 48, its pre-event value — and
-the Curve window is inert. The null therefore holds on \textbf{$N=2$} events, each confirmed
-only after snapshot data QC. The episode is itself a result: \emph{archived registry
-snapshots crawled during acute events can manufacture spurious topological signals — a
-second data-quality trap beside survivorship, and one the naive analysis would have
-reported as the sought-after ``topology detects the exploit'' finding.}
+dips removes the signal entirely — essential $B_1$ returns to 48, its pre-event value
+(Fig.~\ref{fig:curve}) — and the Curve window is inert. The null therefore holds on
+\textbf{$N=2$} events, each confirmed only after snapshot data QC. The episode is itself a
+result: \emph{archived registry snapshots crawled during acute events can manufacture
+spurious topological signals — a second data-quality trap beside survivorship, and one the
+naive analysis would have reported as the sought-after ``topology detects the exploit''
+finding.}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.82\textwidth]{curve_artifact.png}
+\caption{The Curve-exploit ``signal'' is a data glitch. \emph{Top:} the pools driving the
+apparent event crater to near-zero on the single 2023-08-02 crawl and fully recover within
+three weeks (FRAX-USDC \$435M$\to$\$73M$\to$\$451M) — not a \$1.3B drawdown. \emph{Bottom:}
+that corruption injects a spurious essential-$B_1$ spike ($47\to55$, red) that
+transient-dip repair removes ($\to48$, green), leaving the window inert.}
+\label{fig:curve}
+\end{figure}
 
 Unlike the descriptive fraction, the null is robust to every choice we can vary —
 survivorship, LP representation, sampling cadence, and now two distinct stress events. It

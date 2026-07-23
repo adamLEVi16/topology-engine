@@ -6,3 +6,5 @@ __pycache__/
 !paper/rq1_profile.png
 archive/
 !paper/decensor.png
+!paper/representation.png
+!paper/curve_artifact.png
