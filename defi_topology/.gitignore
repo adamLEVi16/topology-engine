@@ -5,3 +5,4 @@ __pycache__/
 !figs/*.png
 !paper/rq1_profile.png
 archive/
+!paper/decensor.png
