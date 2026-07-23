@@ -38,6 +38,22 @@ ZERO = P.ZERO
 HERE = os.path.dirname(os.path.abspath(__file__))
 ARCHIVE_DIR = os.path.join(HERE, "archive")
 
+# Curve 3pool LP token (identified from FRAX-3CRV in the archive). In the 2022-23
+# archive it appears as its OWN vertex in ~68 metapools; resolving it into its base
+# assets is the "resolved" fork the paper could not test because those metapools did
+# not survive to today's (base-resolved) registry.
+THREECRV = "0x6c3f90f043a72fa612cbac8115ee7e52bde6e490"
+
+
+def resolve_lp(ts):
+    """'resolved' fork: expand the 3CRV LP vertex into {DAI, USDC, USDT}. Default
+    (lp_vertex fork) keeps 3CRV as its own vertex, the archive's native representation."""
+    s = set(ts)
+    if THREECRV in s:
+        s.discard(THREECRV)
+        s |= {P.DAI, P.USDC, P.USDT}
+    return sorted(s)
+
 
 # ---------------------------------------------------------------- universe filter
 def toks(p):
@@ -84,11 +100,12 @@ def fetch_registry(timestamp, retries=3):
 
 
 # ---------------------------------------------------------------- complex
-def observables(pools, minshare=P.MINSHARE):
+def observables(pools, minshare=P.MINSHARE, resolve=False):
     """Nerve-complex observables from a registry snapshot (each pool carries tvlUsd at
-    the snapshot instant). Mirrors pipeline.build_complex exactly."""
-    live = [(toks(p), (p.get("tvlUsd") or 0)) for p in pools
-            if is_universe(p) and (p.get("tvlUsd") or 0) > 0]
+    the snapshot instant). Mirrors pipeline.build_complex exactly. resolve=True applies
+    the 3CRV -> base-assets fork before building."""
+    live = [((resolve_lp(toks(p)) if resolve else toks(p)), (p.get("tvlUsd") or 0))
+            for p in pools if is_universe(p) and (p.get("tvlUsd") or 0) > 0]
     total = sum(t for _, t in live)
     if total == 0:
         return None
