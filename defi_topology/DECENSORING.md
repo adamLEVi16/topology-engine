@@ -56,11 +56,24 @@ preserving corner is a flat minority (~0.35). Neither convention is uniquely cor
 headline number is an artifact of two arbitrary choices — a stronger, and more precisely
 decomposed, cautionary finding than survivorship alone.
 
-## Finding 3 — the null is the robust part (to be confirmed across conventions, task 9)
-Across the depeg at weekly resolution (Feb–Apr 2023, full universe, lp_vertex) essential
-$B_1$ holds at ~47 and the gap at ~28 — inert, exactly as the survivor view showed.
-Restoring the dead pools reveals no hidden dynamics. Task 9 confirms this under the
-resolved fork too, so the null — unlike the descriptive fraction — is convention-robust.
+## Finding 3 — the null is the robust part (confirmed across conventions)
+De-censored event test at weekly resolution (Feb–Apr 2023, full universe): the pre→post
+depeg change (2023-03-07 → 03-16) is *smaller than typical between-snapshot variation* for
+every observable, under **both** representations —
+
+| observable | pre→post Δ | percentile of \|consecutive-snapshot Δ\| | verdict |
+|---|---|---|---|
+| essB₁ lp_vertex | 1 | 23rd | inert |
+| gap lp_vertex | 1 | 14th | inert |
+| essB₁ resolved | 0 | 0th | inert |
+| gap resolved | 1 | 17th | inert |
+
+So the structural change across the largest stablecoin depeg on record is *less* than the
+routine month-to-month drift, on the full de-censored universe, under both LP conventions.
+**Unlike the descriptive fraction (Finding 2), the null is robust to every modeling choice
+we can vary** — survivorship, LP representation, and cadence. This is the paper's one
+convention-independent structural result, and it directly refutes the reviewers' "it only
+looks rigid because you see survivors."
 
 ## Honesty log (corrections to my own earlier reads)
 - **Over-attribution, now fixed:** the previous commit called the RQ1 majority→minority
