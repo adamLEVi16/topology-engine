@@ -75,6 +75,29 @@ we can vary** — survivorship, LP representation, and cadence. This is the pape
 convention-independent structural result, and it directly refutes the reviewers' "it only
 looks rigid because you see survivors."
 
+## Finding 4 — the null holds on a second event (N=2), after catching a data trap
+Testing the de-censored complex against the **Curve/Vyper exploit (2023-07-30)** first
+appeared to show a *signal*: essential $B_1$ jumped 47→55 (90th percentile of
+between-snapshot changes) under lp\_vertex, and similarly under resolved. It is an
+**artifact**, verified three ways:
+
+1. Universe TVL on the single 08-02 crawl **halves** ($3.04B→$1.73B) then recovers — an
+   integrity scan across all 40 snapshots flags 08-02 as the *only* anomaly, and it
+   touches none of the 2×2 or depeg dates.
+2. The drop is a **transient dip in ~32 pools, mostly FRAX** (FRAX-USDC
+   \$435M→\$73M→\$451M, FRAX-USDP \$112M→\$3M→\$129M) — 77% of the total drop — i.e.
+   corrupted TVL readings during the exploit chaos, not a real drawdown (stablecoin pools
+   were not the exploit target; \$70M of *ETH* pools were).
+3. `repair_transient_dips` (interpolate the glitched pools from neighbours) **removes the
+   signal entirely**: essential $B_1$ returns to 48 ($\approx$ the 47 pre-event value).
+
+So the Curve window is **inert**, and the de-censored null now holds on **N = 2 events**
+(USDC depeg + Curve exploit), each confirmed only after snapshot-level data QC. This adds
+a second methodological trap to the paper alongside survivorship: **archived registry
+snapshots crawled during acute events can carry corrupted TVL, manufacturing spurious
+topological signals; an integrity scan + transient-dip repair is required.** Reinforces
+the core message that registry-based DeFi reconstruction needs explicit data hygiene.
+
 ## Honesty log (corrections to my own earlier reads)
 - **Over-attribution, now fixed:** the previous commit called the RQ1 majority→minority
   flip a *survivorship* artifact. The 2×2 shows **LP-token representation is the larger

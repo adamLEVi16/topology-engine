@@ -100,6 +100,31 @@ def fetch_registry(timestamp, retries=3):
 
 
 # ---------------------------------------------------------------- complex
+def universe_tvl(pools):
+    return sum((p.get("tvlUsd") or 0) for p in pools if is_universe(p))
+
+
+def repair_transient_dips(mid, pre, post, frac=0.5, floor=1e5):
+    """Data-quality guard for snapshots crawled during acute events. The 2023-08-02
+    crawl (mid Curve/Vyper exploit) had ~32 pools, mostly FRAX, with spuriously collapsed
+    TVL that fully recovered by the next crawl (e.g. FRAX-USDC $435M->$73M->$451M),
+    halving universe TVL and injecting a spurious ~8-loop jump in essential B1. For each
+    pool materially live (> floor) on BOTH temporal neighbours, if its mid TVL is
+    < frac * min(neighbours) it is treated as a transient dip and replaced by the
+    neighbour mean. Returns (repaired_pools, n_fixed). Analogous to pipeline.forward_fill
+    but at the registry-snapshot level. Only snapshots flagged by an integrity scan
+    (universe TVL anomalously low vs neighbours) need this."""
+    a = {p["pool"]: (p.get("tvlUsd") or 0) for p in pre}
+    c = {p["pool"]: (p.get("tvlUsd") or 0) for p in post}
+    out, nfix = [], 0
+    for p in mid:
+        q = dict(p); pid = p["pool"]; m = p.get("tvlUsd") or 0
+        if a.get(pid, 0) > floor and c.get(pid, 0) > floor and m < frac * min(a[pid], c[pid]):
+            q["tvlUsd"] = (a[pid] + c[pid]) / 2.0; nfix += 1
+        out.append(q)
+    return out, nfix
+
+
 def observables(pools, minshare=P.MINSHARE, resolve=False):
     """Nerve-complex observables from a registry snapshot (each pool carries tvlUsd at
     the snapshot instant). Mirrors pipeline.build_complex exactly. resolve=True applies
