@@ -64,7 +64,6 @@ def day_diagram(ds, charts, tok, minshare, lp_mode="resolved"):
     pers = st.persistence()
     h1 = [(b, d) for (dim, (b, d)) in pers if dim == 1]
     h0 = [(b, d) for (dim, (b, d)) in pers if dim == 0]
-    fmax = max((st.filtration(s) for s, _ in zip((s for s, f in st.get_simplices()), range(10**9))), default=0)
     # max filtration actually present (entry value of the weakest simplex)
     fmax = max((f for _, f in st.get_simplices()), default=0.0)
     return h1, h0, fmax

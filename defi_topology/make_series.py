@@ -36,10 +36,13 @@ def main():
     ap.add_argument("--out", default="long_series.json")
     args = ap.parse_args()
     rows = build_range(args.start, args.end, args.minshare, args.lp)
-    json.dump({"event": rows, "meta": {"start": args.start, "end": args.end,
-                                       "lp_mode": args.lp, "minshare": args.minshare}},
-              open(args.out, "w"))
-    print(f"wrote {args.out}: {len(rows)} daily rows ({rows[0]['date']} .. {rows[-1]['date']})")
+    with open(args.out, "w") as f:
+        json.dump({"event": rows, "meta": {"start": args.start, "end": args.end,
+                                           "lp_mode": args.lp, "minshare": args.minshare}}, f)
+    if rows:
+        print(f"wrote {args.out}: {len(rows)} daily rows ({rows[0]['date']} .. {rows[-1]['date']})")
+    else:
+        print(f"wrote {args.out}: 0 daily rows (no data found for this range)")
 
 
 if __name__ == "__main__":
