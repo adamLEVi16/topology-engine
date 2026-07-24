@@ -84,10 +84,14 @@ between-snapshot changes) under lp\_vertex, and similarly under resolved. It is 
 1. Universe TVL on the single 08-02 crawl **halves** ($3.04B→$1.73B) then recovers — an
    integrity scan across all 40 snapshots flags 08-02 as the *only* anomaly, and it
    touches none of the 2×2 or depeg dates.
-2. The drop is a **transient dip in ~32 pools, mostly FRAX** (FRAX-USDC
-   \$435M→\$73M→\$451M, FRAX-USDP \$112M→\$3M→\$129M) — 77% of the total drop — i.e.
+2. The drop is a **transient dip in 10 registry rows, 8 of them FRAX** (FRAX-USDC
+   \$435M→\$73M→\$451M, FRAX-USDP \$112M→\$3M→\$129M) — **84%** of the total drop — i.e.
    corrupted TVL readings during the exploit chaos, not a real drawdown (stablecoin pools
-   were not the exploit target; \$70M of *ETH* pools were).
+   were not the exploit target; \$70M of *ETH* pools were). Rows, not distinct pools:
+   DeFiLlama re-lists the same Curve pool under Convex, so the 10 rows are 6 pools.
+   *(Corrected 2026-07: earlier drafts said "~32 pools / 77%" — stale numbers from a run
+   with a different post-event neighbour. The pinned series gives 10 rows / 84%; regenerate
+   with `paper_figures.py`, which prints the count it plots.)*
 3. `repair_transient_dips` (interpolate the glitched pools from neighbours) **removes the
    signal entirely**: essential $B_1$ returns to 48 ($\approx$ the 47 pre-event value).
 

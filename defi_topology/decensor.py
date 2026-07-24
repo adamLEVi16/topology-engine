@@ -112,10 +112,13 @@ def universe_tvl(pools):
 
 
 def repair_transient_dips(mid, pre, post, frac=0.5, floor=1e5):
-    """Data-quality guard for snapshots crawled during acute events. The 2023-08-02
-    crawl (mid Curve/Vyper exploit) had ~32 pools, mostly FRAX, with spuriously collapsed
-    TVL that fully recovered by the next crawl (e.g. FRAX-USDC $435M->$73M->$451M),
-    halving universe TVL and injecting a spurious ~8-loop jump in essential B1. For each
+    """Data-quality guard for snapshots crawled during acute events. On the 2023-08-02
+    crawl (mid Curve/Vyper exploit) 10 registry rows, 8 of them FRAX, had spuriously
+    collapsed TVL that recovered by the next crawl (e.g. FRAX-USDC $435M->$73M->$451M);
+    together they are 84% of the drop that halved universe TVL, and they inject a spurious
+    ~8-loop jump in essential B1. (Counts are rows, not distinct pools: DeFiLlama re-lists
+    the same Curve pool under Convex. Re-derive with paper_figures.py rather than trusting
+    this comment.) For each
     pool materially live (> floor) on BOTH temporal neighbours, if its mid TVL is
     < frac * min(neighbours) it is treated as a transient dip and replaced by the
     neighbour mean. Returns (repaired_pools, n_fixed). Analogous to pipeline.forward_fill

@@ -1,7 +1,17 @@
-\documentclass[11pt]{article}
+\documentclass[10pt,twocolumn]{article}
 
 % --- arXiv-ready, Overleaf-trivial: only standard packages, manual bibliography ---
-\usepackage[margin=1in]{geometry}
+% Layout follows the conventions of Springer research articles (two columns, sans-serif
+% numbered headings, "Fig. N" captions below figures, "Table N" captions above tables,
+% booktabs rules, a full-width abstract). The text block is 7.0in wide, which is exactly
+% the width the figures are authored at, so \includegraphics never rescales them.
+\usepackage[a4paper,left=0.635in,right=0.635in,top=0.95in,bottom=1.0in,
+            columnsep=0.28in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{mathptmx}          % Times body text + matching math
+\usepackage[scaled=0.92]{helvet} % Helvetica for the sans-serif headings
+\usepackage{courier}
 \usepackage{amsmath,amssymb}
 \usepackage{natbib}
 \usepackage{graphicx}
@@ -13,23 +23,71 @@
 \newcommand{\SIrange}[3]{#1--#2\,#3}
 \usepackage[hidelinks]{hyperref}
 \usepackage{xcolor}
-\usepackage{caption}
-\captionsetup{font=small,labelfont=bf}
+\usepackage[font=small,labelfont=bf,labelsep=space]{caption}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{microtype}
 
-\title{\textbf{How Much of DeFi Liquidity Is Higher-Order?\\
-Survivorship, LP Representation, and a Robust Null}}
+\renewcommand{\figurename}{Fig.}
 
-\author{Adam Levine\\
-\small Department of Economics, Hofstra University\\
-\small \texttt{adalevine08@gmail.com}}
+% Narrow (3.35in) columns plus unbreakable \texttt{} endpoint names and URLs otherwise
+% leave a handful of very loose lines. Let TeX break inside typewriter text and spend a
+% little emergency stretch rather than gapping the interword spaces.
+\tolerance=1200
+\setlength{\emergencystretch}{2.2em}
+\renewcommand{\UrlBreaks}{\do\/\do\.\do\-\do\_\do\a\do\c\do\e\do\g\do\i\do\m\do\o\do\p\do\t}
 
-\date{\today}
+% Five full-width floats in a six-page two-column paper: with LaTeX's defaults they queue
+% up and the last one lands on a float-only page at the end. Let a top float own most of
+% the page and allow two per page, so each figure appears on or near the page that
+% discusses it.
+\renewcommand{\dbltopfraction}{0.92}
+\renewcommand{\dblfloatpagefraction}{0.6}
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.7}
+\renewcommand{\textfraction}{0.07}
+\renewcommand{\floatpagefraction}{0.7}
+\setcounter{dbltopnumber}{2}
+\setcounter{topnumber}{3}
+\setcounter{totalnumber}{4}
+
+% Springer-style headings: sans-serif bold, number then space, no trailing period.
+\titleformat{\section}{\sffamily\bfseries\large}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\sffamily\bfseries\normalsize}{\thesubsection}{0.6em}{}
+\titleformat{\paragraph}[runin]{\sffamily\bfseries}{}{0pt}{}
+\titlespacing*{\section}{0pt}{1.6ex plus .3ex}{0.8ex}
+\titlespacing*{\subsection}{0pt}{1.3ex plus .3ex}{0.5ex}
+\titlespacing*{\paragraph}{0pt}{1.2ex plus .2ex}{0.5em}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\footnotesize\itshape How much of DeFi liquidity is higher-order?}
+\fancyhead[R]{\footnotesize\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{\color{black!35}\hrule height 0.4pt}
 
 \begin{document}
-\maketitle
 
-\begin{abstract}
-\noindent
+\twocolumn[
+\begin{@twocolumnfalse}
+\vspace*{-0.5cm}
+{\raggedright
+{\sffamily\bfseries\LARGE How Much of DeFi Liquidity Is Higher-Order?\\[3pt]
+Survivorship, LP Representation, and a Robust Null\par}
+\vspace{1.2em}
+{\sffamily\large Adam Levine\par}
+\vspace{0.45em}
+{\small Department of Economics, Hofstra University\ \ \textperiodcentered\ \
+\texttt{adalevine08@gmail.com}\par}
+\vspace{0.35em}
+{\footnotesize Preprint --- \today\par}
+}
+
+\vspace{1.6em}
+% NB: no \\[..] at brace level 0 in here -- the ] would close \twocolumn's optional arg.
+{\noindent\sffamily\bfseries Abstract\par}
+\vspace{0.35em}
+\noindent{\small
 A multi-asset automated-market-maker pool (e.g.\ Curve's 3pool
 $\{$USDC,\,USDT,\,DAI$\}$) encodes a genuinely three-way relationship that a pairwise
 graph discards, motivating a persistent-homology treatment of the \emph{nerve complex}
@@ -57,7 +115,15 @@ read the null economically (stablecoins are common-numéraire substitutes, so th
 liquidity scaffold is shallow and price-stress-invariant) and draw the methodological
 lesson: report the higher-order content of a DeFi network as a sensitivity range over
 survivorship and representation, never as a point estimate. Code and data are fully reproducible.
-\end{abstract}
+\par}
+
+\vspace{0.9em}
+\noindent{\small{\sffamily\bfseries Keywords}\ \ Decentralised finance \textperiodcentered\
+Higher-order networks \textperiodcentered\ Persistent homology \textperiodcentered\
+Survivorship bias \textperiodcentered\ Automated market makers\par}
+\vspace{1.8em}
+\end{@twocolumnfalse}
+]
 
 \section{Introduction}
 
@@ -137,6 +203,19 @@ control.
 \section{Data: the registry, and de-censoring its survivorship}
 \label{sec:data}
 
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{decensor.png}
+\caption{Survivor-only reconstruction sees roughly one loop in ten, and manufactures a
+trend that is not there. \textbf{a} Essential $B_1$ on the de-censored full historical
+universe (blue) vs.\ on pools that survive to today (red); the shaded wedge is the loop
+structure a survivor-only study cannot see. \textbf{b} The higher-order fraction is flat on
+the full universe (green) but declines on survivors (red) — and that decline tracks the
+rising survivorship rate (grey, right axis), i.e.\ it is the survivor sample converging to
+the truth, not the network changing. Vertical line: the USDC depeg (2023-03-11).}
+\label{fig:decensor}
+\end{figure*}
+
 We use two free, unauthenticated DeFiLlama endpoints: the pool registry
 (\texttt{yields.llama.fi/pools}: project, chain, symbol, \texttt{underlyingTokens},
 current TVL, stablecoin flag) and per-pool daily TVL history
@@ -211,11 +290,29 @@ pools that dominate the higher-order fraction.
 \subsection{The higher-order fraction is a modeling artifact}
 \label{sec:frac}
 
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{representation.png}
+\caption{The \emph{same} de-censored universe reads as majority- or minority-higher-order
+purely by LP-token representation. Resolving 3CRV to base assets (red squares) keeps the
+fraction a declining majority ($>0.5$); keeping 3CRV as its own vertex (green circles)
+keeps it a flat minority ($<0.5$). The shaded band between them is the span of one
+modelling choice that is rarely reported; the two conventions sit on opposite sides of the
+majority line for the entire period, converging only as the metapool structure dissolves.
+The corrupted 2023-08-02 crawl (Sec.~\ref{sec:null}) is excluded.}
+\label{fig:repr}
+\end{figure*}
+
 Table~\ref{tab:2x2} crosses the two axes. The higher-order fraction spans
 \textbf{0.31--0.93}. Reading it two ways:
 
-\begin{table}[t]
-\centering\small
+\begin{table*}[t]
+\centering
+\caption{Higher-order fraction by sample $\times$ LP representation. The paper-standard
+corner (resolved, survivor) reads a declining majority; the de-censored,
+composability-preserving corner (lp\_vertex, full) reads a flat minority. Same data.}
+\label{tab:2x2}
+\small
 \begin{tabular}{lcccc}
 \toprule
 snapshot & lp\_vertex, full & lp\_vertex, survivor & resolved, full & resolved, survivor \\
@@ -229,11 +326,7 @@ snapshot & lp\_vertex, full & lp\_vertex, survivor & resolved, full & resolved, 
 2025-05 & 0.40 & 0.39 & 0.50 & 0.60 \\
 \bottomrule
 \end{tabular}
-\caption{Higher-order fraction by sample $\times$ LP representation. The paper-standard
-corner (resolved, survivor) reads a declining majority; the de-censored, composability-
-preserving corner (lp\_vertex, full) reads a flat minority. Same data.}
-\label{tab:2x2}
-\end{table}
+\end{table*}
 
 \begin{itemize}
 \item \textbf{Representation is the larger driver.} Resolving 3CRV collapses $\sim$68
@@ -259,27 +352,6 @@ reflects economic exposure to base assets; lp\_vertex reflects composability str
 \textbf{The honest answer to ``how much is higher-order?'' is the range in
 Table~\ref{tab:2x2}, not a number.}
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\textwidth]{decensor.png}
-\caption{Survivor-only reconstruction (orange/red) sees $\sim$1/10 of the loops (top) and
-manufactures a declining higher-order trend (bottom) that the de-censored full universe
-(blue/green) does not show; the survivor decline tracks rising survivorship (grey dashed),
-which explains it. Vertical line: the USDC depeg.}
-\label{fig:decensor}
-\end{figure}
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.92\textwidth]{representation.png}
-\caption{The \emph{same} de-censored universe reads as majority- or minority-higher-order
-purely by LP-token representation. Resolving 3CRV to base assets (red) keeps the fraction
-a declining majority ($>0.5$); keeping 3CRV as its own vertex (green) keeps it a flat
-minority ($<0.5$). The two conventions sit on opposite sides of the majority line for the
-entire period, converging only as the metapool structure dissolves.}
-\label{fig:repr}
-\end{figure}
-
 \subsection{The null is the robust part}
 \label{sec:null}
 
@@ -289,8 +361,14 @@ USDC depeg: the change is \emph{smaller} than typical between-snapshot drift for
 observable under \emph{both} representations — essential $B_1$ under resolved does not move
 at all.
 
-\begin{table}[t]
-\centering\small
+\begin{table*}[t]
+\centering
+\caption{De-censored event test, full universe (USDC depeg, 2023-03-07 $\to$ 03-16; one of
+two events --- see text for the Curve/Vyper exploit). The largest stablecoin depeg on
+record moves the structure less than routine month-to-month drift, under both LP
+conventions.}
+\label{tab:null}
+\small
 \begin{tabular}{lccc}
 \toprule
 observable & pre$\to$post depeg $|\Delta|$ & percentile of $|$consecutive $\Delta|$ & verdict \\
@@ -301,19 +379,15 @@ essential $B_1$, resolved & 0 & 0th & inert \\
 gap, resolved & 1 & 17th & inert \\
 \bottomrule
 \end{tabular}
-\caption{De-censored event test, full universe (USDC depeg, 2023-03-07 $\to$ 03-16; one of
-two events --- see text for the Curve/Vyper exploit). The largest stablecoin depeg on
-record moves the structure less than routine month-to-month drift, under both LP
-conventions.}
-\label{tab:null}
-\end{table}
+\end{table*}
 
 \paragraph{A second event, and a data-quality trap.} The Curve/Vyper exploit (2023-07-30)
 at first appears to break the null: on the de-censored universe essential $B_1$ jumps
 $47\to55$ (90th percentile) under lp\_vertex and $31\to37$ under resolved. But the integrity
 scan flags the single 08-02 crawl as the \emph{only} anomaly in the series — universe TVL
-halves ($\$3.04$B$\to\$1.73$B) then recovers — and 77\% of that drop is $\sim$32
-transient-dipped pools, almost all FRAX (FRAX-USDC $\$435$M$\to\$73$M$\to\$451$M; FRAX-USDP
+halves ($\$3.04$B$\to\$1.73$B) then recovers — and 84\% of that drop is 10
+transient-dipped registry rows (6 distinct pools; DeFiLlama re-lists the same Curve pool
+under Convex), 8 of them FRAX (FRAX-USDC $\$435$M$\to\$73$M$\to\$451$M; FRAX-USDP
 $\$112$M$\to\$3$M$\to\$129$M): corrupted readings during the exploit, not a real drawdown
 (the exploit drained \$70M of \emph{ETH} pools, not stablecoins). Repairing the transient
 dips removes the signal entirely — essential $B_1$ returns to 48, its pre-event value
@@ -324,16 +398,19 @@ spurious topological signals — a second data-quality trap beside survivorship,
 naive analysis would have reported as the sought-after ``topology detects the exploit''
 finding.}
 
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\includegraphics[width=0.82\textwidth]{curve_artifact.png}
-\caption{The Curve-exploit ``signal'' is a data glitch. \emph{Top:} the pools driving the
-apparent event crater to near-zero on the single 2023-08-02 crawl and fully recover within
-three weeks (FRAX-USDC \$435M$\to$\$73M$\to$\$451M) — not a \$1.3B drawdown. \emph{Bottom:}
-that corruption injects a spurious essential-$B_1$ spike ($47\to55$, red) that
-transient-dip repair removes ($\to48$, green), leaving the window inert.}
+\includegraphics[width=\textwidth]{curve_artifact.png}
+\caption{The Curve-exploit ``signal'' is a data glitch. \textbf{a} The pools driving the
+apparent event crater to near-zero on the single 2023-08-02 crawl (shaded); three of the
+four rebound to at or above their pre-event level within three weeks (FRAX-USDC
+\$435M$\to$\$73M$\to$\$451M) and FRAX-FPI partially — a \$1.3B ``drawdown'' that reverses
+on the next crawl is a reading error, not a liquidity event. \textbf{b} That corruption
+injects a spurious essential-$B_1$ spike ($47\to55$, red) that transient-dip repair
+removes ($\to48$, green), leaving the window inert. Dotted line: the exploit (2023-07-30);
+the 10 dipped registry rows are 6 distinct pools, 8 rows of them FRAX.}
 \label{fig:curve}
-\end{figure}
+\end{figure*}
 
 Unlike the descriptive fraction, the null is robust to every choice we can vary —
 survivorship, LP representation, sampling cadence, and now two distinct stress events. It
@@ -390,8 +467,8 @@ resolved; we run both explicitly rather than mixing them.
 
 Measured rather than asserted, the higher-order structure of Ethereum stablecoin liquidity
 has no convention-free size: the higher-order fraction ranges 0.31--0.93 across two
-modeling choices — LP-token representation (the larger) and survivorship — that registry-
-based DeFi network studies routinely leave unexamined, and even its time-trend flips sign
+modeling choices — LP-token representation (the larger) and survivorship — that
+registry-based DeFi network studies routinely leave unexamined, and even its time-trend flips sign
 between conventions. Survivor-only reconstruction, the field default, sees roughly a tenth
 of the loop structure; Internet-Archive de-censoring recovers the rest and revives an
 otherwise-untestable representation fork. The one convention-independent structural result
@@ -417,8 +494,14 @@ and the integrity scan / \texttt{repair\_transient\_dips} data-quality guard).
 
 \begin{thebibliography}{9}
 \small
+\bibitem[Aufiero et al.(2025)]{tradefidefi2025} Aufiero, S., Bartolucci, S.,
+Caccioli, F., Vivo, P. (2025). Mapping microscopic and systemic risks in TradFi and
+DeFi: a literature review. arXiv:2508.12007.
 \bibitem[Bick et al.(2023)]{bick2023} Bick, C., Gross, E., Harrington, H.~A., Schaub,
 M.~T. (2023). What are higher-order networks? \emph{SIAM Review} 65(3).
+\bibitem[de Favereau de Jeneret \& Diamantis(2025)]{fx2025} de Favereau de Jeneret,
+P., Diamantis, I. (2025). Topology of currencies: persistent homology for FX
+co-movements: a comparative clustering study. arXiv:2510.19306.
 \bibitem[Eisenberg \& Noe(2001)]{eisenberg2001} Eisenberg, L., Noe, T.~H. (2001).
 Systemic risk in financial systems. \emph{Management Science} 47(2).
 \bibitem[Forte(2026)]{forte2026} Forte, F.~D. (2026). It takes two to tango, but more
@@ -426,15 +509,9 @@ to assess systemic risk: credit networks through the lens of hypergraphs.
 arXiv:2607.10943.
 \bibitem[Gidea \& Katz(2018)]{gidea2018} Gidea, M., Katz, Y. (2018). Topological data
 analysis of financial time series: landscapes of crashes. \emph{Physica A} 491.
-\bibitem[de Favereau de Jeneret \& Diamantis(2025)]{fx2025} de Favereau de Jeneret,
-P., Diamantis, I. (2025). Topology of currencies: persistent homology for FX
-co-movements: a comparative clustering study. arXiv:2510.19306.
 \bibitem[Yan \& Tessone(2025)]{uniswap2025} Yan, T., Tessone, C.~J. (2025). Network
 analysis of Uniswap: centralization and fragility in the decentralized exchange
 market. arXiv:2503.07834.
-\bibitem[Aufiero et al.(2025)]{tradefidefi2025} Aufiero, S., Bartolucci, S.,
-Caccioli, F., Vivo, P. (2025). Mapping microscopic and systemic risks in TradFi and
-DeFi: a literature review. arXiv:2508.12007.
 \end{thebibliography}
 
 \end{document}
