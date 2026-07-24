@@ -15,7 +15,7 @@ Generated from main.tex so it cannot drift out of sync with the compiled PDF.
 import argparse
 import re
 
-START = "\\noindent{\\small\nA multi-asset"
+START = "\\noindent{\\small\nHow much of"
 END = "\\par}\n\n\\vspace{0.9em}"
 
 # LaTeX -> plain text. Order matters: strip markup commands before unescaping.
