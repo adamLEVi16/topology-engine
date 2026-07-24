@@ -146,6 +146,8 @@ def repair_universe_dips(charts, tvl_frac=0.6, pool_frac=0.5):
             flagged.append(d)
     for d in flagged:
         i = dates.index(d)
+        if i == 0 or i == len(dates) - 1:
+            continue                      # need both neighbours to interpolate; leave edge anomalies as-is
         dprev, dnext = dates[i - 1], dates[i + 1]
         for c in charts.values():
             a, m, cc = c.get(dprev, 0), c.get(d, 0), c.get(dnext, 0)

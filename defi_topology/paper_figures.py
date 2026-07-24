@@ -105,7 +105,7 @@ def fig_curve_artifact(M):
         i = dates.index(d)
         uni = load_uni(M[d])
         raw.append(D.observables(uni, resolve=False)["essB1"])
-        pr = load_uni(M[dates[i - 1]]); po = load_uni(M[dates[min(i + 1, len(dates) - 1)]])
+        pr = load_uni(M[dates[max(i - 1, 0)]]); po = load_uni(M[dates[min(i + 1, len(dates) - 1)]])
         fixed, _ = D.repair_transient_dips(uni, pr, po)
         rep.append(D.observables(fixed, resolve=False)["essB1"])
 

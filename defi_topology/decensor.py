@@ -25,6 +25,13 @@ Run:
   python decensor.py --build --start 2022-10-01 --end 2025-06-01 --step 30 \
                      --dense-start 2023-02-01 --dense-end 2023-04-20 --dense-step 7
   python decensor.py --series 2022-11-10 2023-03-07 2023-06-06 2023-11-28
+  python decensor.py --pinned decensor_series.json    # exact byte-for-byte rebuild
+
+Reproducibility note: the Wayback Machine is append-only, so resolving a target date to
+its "closest crawl" (`--build`) can drift as new crawls are indexed. Each crawl timestamp,
+however, addresses a fixed permanent snapshot; the timestamps used are recorded in the
+series JSON, and `--pinned <series.json>` reproduces it exactly. Raw snapshots (~390 MB)
+are cached under archive/ (git-ignored), re-fetched on demand.
 """
 import argparse, datetime, gzip, itertools, json, math, os, time, urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -190,11 +197,39 @@ def cache_all(targets, workers=4):
     return got
 
 
-def build_series(targets, out="decensor_series.json"):
+def build_series(targets=None, out="decensor_series.json", tvl_frac=0.6, pinned=None):
     today_ids = {u["pool"] for u in P.universe()}
-    snaps = cache_all(targets)
+    if pinned:
+        # exact reproducibility: rebuild from the snapshot timestamps recorded in an
+        # existing series JSON. fetch_registry(ts) serves a SPECIFIC Wayback crawl and is
+        # deterministic, so this reproduces the series byte-for-byte regardless of how the
+        # live "closest crawl" resolution has drifted since.
+        want = sorted({r["snapshot"] for r in json.load(open(pinned))})
+        snaps = {ts: d for ts, d in ((t, fetch_registry(t)) for t in want) if d}
+        print(f"  pinned rebuild: {len(snaps)}/{len(want)} exact snapshots from {pinned}")
+    else:
+        snaps = cache_all(targets)
+    tss = sorted(snaps)
+
+    # integrity scan: flag snapshots whose universe TVL craters vs temporal neighbours
+    # (corrupted event-window crawls, e.g. 2023-08-02) and repair them from neighbours
+    # BEFORE computing observables, so the descriptive 2x2/series gets the same data
+    # hygiene as the event tests and the representation figure.
+    utvl = {ts: universe_tvl(snaps[ts]) for ts in tss}
+    repaired_ts = []
+    for i, ts in enumerate(tss):
+        if i == 0 or i == len(tss) - 1:
+            continue
+        nb = [utvl[tss[j]] for j in (i - 1, i + 1)]
+        if min(nb) > 0 and utvl[ts] < tvl_frac * (sorted(nb)[len(nb) // 2]):
+            snaps[ts], nfix = repair_transient_dips(snaps[ts], snaps[tss[i - 1]], snaps[tss[i + 1]])
+            if nfix:
+                repaired_ts.append(ts)
+    if repaired_ts:
+        print(f"  integrity: repaired {len(repaired_ts)} corrupted crawl(s): {repaired_ts}")
+
     rows = []
-    for ts in sorted(snaps):
+    for ts in tss:
         data = snaps[ts]
         uni = [p for p in data if is_universe(p)]
         if not uni:
@@ -205,7 +240,11 @@ def build_series(targets, out="decensor_series.json"):
                      "n_universe": len(uni), "n_survivor": len(surv),
                      "true_survivorship": round(len(surv) / len(uni), 4),
                      "full": observables(uni), "survivor": observables(surv)})
-    json.dump(rows, open(out, "w"))
+    with open(out, "w") as fh:
+        json.dump(rows, fh)
+    if not rows:
+        print(f"\nwrote {out}: 0 snapshots (no data for these targets)")
+        return rows
     print(f"\nwrote {out}: {len(rows)} snapshots ({rows[0]['date']} .. {rows[-1]['date']})")
     hdr = ("date", "univ", "surv", "sv%", "essB1 f/s", "gap f/s", "HOfrac f/s")
     print(f"{hdr[0]:11s}{hdr[1]:>5}{hdr[2]:>5}{hdr[3]:>6}{hdr[4]:>13}{hdr[5]:>11}{hdr[6]:>15}")
@@ -229,10 +268,15 @@ def main():
     ap.add_argument("--dense-end", default=None)
     ap.add_argument("--dense-step", type=int, default=7)
     ap.add_argument("--series", nargs="+")
+    ap.add_argument("--pinned", default=None,
+                    help="rebuild EXACTLY from the snapshot timestamps recorded in an "
+                         "existing series JSON (deterministic; ignores --start/--end/--dense)")
     ap.add_argument("--out", default="decensor_series.json")
     args = ap.parse_args()
 
-    if args.build:
+    if args.pinned:
+        build_series(out=args.out, pinned=args.pinned)
+    elif args.build:
         targets = month_targets(args.start, args.end, args.step)
         if args.dense_start and args.dense_end:
             targets += month_targets(args.dense_start, args.dense_end, args.dense_step)
