@@ -128,12 +128,43 @@ def forward_fill(observed, max_gap=MAX_GAP):
     return out
 
 
-def load_charts(have, fill=True, max_gap=MAX_GAP):
-    """Load per-pool {date: tvl}. With fill=True, forward-fill short interior gaps."""
+def repair_universe_dips(charts, tvl_frac=0.6, pool_frac=0.5):
+    """Daily analogue of decensor.repair_transient_dips, kept deliberately conservative so
+    it can never erase real event dynamics. First flag whole days on which the *universe*
+    TVL craters vs its immediate neighbours (total < tvl_frac x neighbour median) -- these
+    are DeFiLlama data glitches, e.g. 2023-08-02 (mid Curve/Vyper exploit) and 2023-12-17.
+    A real depeg's TVL decline is gradual and is not flagged. Only on a flagged day, repair
+    each pool whose TVL is a transient dip (< pool_frac x min of its two neighbours) by
+    neighbour interpolation. Returns (charts, flagged_days); modifies charts in place."""
+    dates = sorted(set().union(*[set(c) for c in charts.values()])) if charts else []
+    tot = {d: sum(c.get(d, 0) for c in charts.values()) for d in dates}
+    flagged = []
+    for i, d in enumerate(dates):
+        nb = [tot[dates[j]] for j in (i - 1, i + 1) if 0 <= j < len(dates)]
+        med = sorted(nb)[len(nb) // 2] if nb else tot[d]
+        if med > 0 and tot[d] < tvl_frac * med:
+            flagged.append(d)
+    for d in flagged:
+        i = dates.index(d)
+        dprev, dnext = dates[i - 1], dates[i + 1]
+        for c in charts.values():
+            a, m, cc = c.get(dprev, 0), c.get(d, 0), c.get(dnext, 0)
+            if a > 0 and cc > 0 and m < pool_frac * min(a, cc):
+                c[d] = (a + cc) / 2.0
+    return charts, flagged
+
+
+def load_charts(have, fill=True, max_gap=MAX_GAP, repair_dips=True):
+    """Load per-pool {date: tvl}. With fill=True, forward-fill short interior gaps
+    (zeros/absent days); with repair_dips=True, also repair universe-flagged transient
+    TVL dips (positive-value glitches forward_fill cannot see), matching the de-censored
+    path's data hygiene."""
     out = {}
     for u in have:
         raw = dict(json.load(open(f"{CHART_DIR}/{u['pool']}.json")))
         out[u["pool"]] = forward_fill(raw, max_gap) if fill else raw
+    if repair_dips:
+        out, _ = repair_universe_dips(out)
     return out
 
 

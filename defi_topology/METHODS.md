@@ -215,7 +215,7 @@ reference distribution — a bias *toward* the null we claim, so it mattered. Fi
 also evicts truncated series-edge windows from the reference distribution. A new
 `n_disjoint_equivalent` diagnostic reports the autocorrelation-honest effective sample
 (451 sliding placebos ≈ 7 disjoint-equivalent for the 632-day series). Rerun deltas:
-USDC essB₁ 53.6→54.5th pct (p 0.93→0.91), gap 82.2→84.0 (p 0.36→0.32), tp0 34.9→30.8
+USDC essB₁ 53.6→54.5th pct (p 0.93→0.91), gap 82.2→84.0 (p 0.36→0.32), tp0 34.9→30.6
 (p 0.70→0.62); graph metrics 34–63rd pct. **Conclusion unchanged — the null survives
 its own audit.** Terra's invalid extremes became more extreme (empirical-floor p),
 reinforcing §2.9's warning.

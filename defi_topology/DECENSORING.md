@@ -98,6 +98,15 @@ snapshots crawled during acute events can carry corrupted TVL, manufacturing spu
 topological signals; an integrity scan + transient-dip repair is required.** Reinforces
 the core message that registry-based DeFi reconstruction needs explicit data hygiene.
 
+The same trap sits in the *daily* survivor series (the per-pool chart histories glitch on
+the same dates — 2023-08-02 and 2023-12-17), where `forward_fill` cannot see it (it bridges
+zeros/gaps, not positive dips). `pipeline.repair_universe_dips` now applies the identical
+integrity-scan + transient-dip repair to the daily path, so both reconstructions share one
+data-hygiene standard. Effect on results: nil — repairing those two days in place shifts the
+depeg placebo percentile by 0.0 (54.5th, $p=0.91$), because their essB₁ was already
+unremarkable; the guard is for consistency and future-proofing, not because it moved a
+number.
+
 ## Honesty log (corrections to my own earlier reads)
 - **Over-attribution, now fixed:** the previous commit called the RQ1 majority→minority
   flip a *survivorship* artifact. The 2×2 shows **LP-token representation is the larger
