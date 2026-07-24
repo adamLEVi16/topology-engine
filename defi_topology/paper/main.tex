@@ -1,6 +1,6 @@
 \documentclass[10pt,twocolumn]{article}
 
-% --- arXiv-ready, Overleaf-trivial: only standard packages, manual bibliography ---
+% arXiv-ready, Overleaf-trivial: only standard packages, manual bibliography.
 % Layout follows the conventions of Springer research articles (two columns, sans-serif
 % numbered headings, "Fig. N" captions below figures, "Table N" captions above tables,
 % booktabs rules, a full-width abstract). The text block is 7.0in wide, which is exactly
@@ -73,14 +73,14 @@
 \vspace*{-0.5cm}
 {\raggedright
 {\sffamily\bfseries\LARGE How Much of DeFi Liquidity Is Higher-Order?\\[3pt]
-Survivorship, LP Representation, and a Robust Null\par}
+Survivorship, LP Representation, and a Null That Holds\par}
 \vspace{1.2em}
 {\sffamily\large Adam Levine\par}
 \vspace{0.45em}
 {\small Department of Economics, Hofstra University\ \ \textperiodcentered\ \
 \texttt{adalevine08@gmail.com}\par}
 \vspace{0.35em}
-{\footnotesize Preprint --- \today\par}
+{\footnotesize Preprint, \today\par}
 }
 
 \vspace{1.6em}
@@ -99,18 +99,19 @@ The larger driver is \textbf{LP-token representation} (keeping an LP token such 
 its own vertex vs.\ resolving it to base assets, which collapses metapools toward a cone
 and roughly doubles the fraction); the second is \textbf{survivorship}. On the latter we
 make a methodological contribution: the standard registry-based historical
-reconstruction, used across DeFi network research, is severely survivor-biased —
-reconstructing from pools that survive to today captures only $\sim$\SI{10}{\percent} of
-the loop structure — and it can be \emph{de-censored} using Internet Archive snapshots of
+reconstruction, used across DeFi network research, is severely survivor-biased.
+Reconstructing from pools that survive to today captures only $\sim$\SI{10}{\percent} of
+the loop structure, and it can be \emph{de-censored} using Internet Archive snapshots of
 the registry endpoint, which we do over \num{36} snapshots (Oct 2022--May 2025).
 De-censoring also revives the LP-resolution fork that a survivor-only view cannot even
-run, because the relevant metapools have all delisted. Against this fragility of the
-descriptive metric, one result is robust to every choice we vary — survivorship, LP
-representation, and sampling cadence: through \emph{both} the March 2023 USDC depeg and the
+run, since the relevant metapools have all delisted. Against this fragility of the
+descriptive metric, one result holds under every choice we vary (survivorship, LP
+representation, and sampling cadence): through \emph{both} the March 2023 USDC depeg and the
 July 2023 Curve/Vyper exploit the reconstructed structure is \textbf{inert}, changing less
 than routine month-to-month drift. An apparent signal at the exploit is traced to corrupted
-TVL in the single archive crawl captured mid-event and repaired away — a \emph{second}
-data-quality trap (beside survivorship) that registry-based reconstruction must guard. We
+TVL in the single archive crawl captured mid-event and repaired away. That is a
+\emph{second} data-quality trap beside survivorship, one that registry-based
+reconstruction must guard against. We
 read the null economically (stablecoins are common-numéraire substitutes, so their
 liquidity scaffold is shallow and price-stress-invariant) and draw the methodological
 lesson: report the higher-order content of a DeFi network as a sensitivity range over
@@ -128,7 +129,7 @@ Survivorship bias \textperiodcentered\ Automated market makers\par}
 \section{Introduction}
 
 Classical financial-contagion models are pairwise: institutions are nodes, bilateral
-exposures are edges \citep{eisenberg2001}. A multi-asset AMM pool is not — Curve's 3pool
+exposures are edges \citep{eisenberg2001}. A multi-asset AMM pool is not. Curve's 3pool
 binds $\{$USDC, USDT, DAI$\}$ into one contract, and a graph records only the three
 pairwise projections, discarding the joint membership. Higher-order network methods
 (hypergraphs, simplicial complexes; \citealp{bick2023}) retain exactly that information,
@@ -155,7 +156,7 @@ every such pool a simplex containing the 3pool triangle as a face, pushing the c
 toward a cone (contractible, higher-order by construction); keeping 3CRV as its own vertex
 does not. This choice is the \emph{larger} driver.
 \item \textbf{Survivorship.} The standard historical reconstruction filters
-\emph{today's} registry back in time, so it silently conditions on pools that survived —
+\emph{today's} registry back in time, so it silently conditions on pools that survived,
 disproportionately the large multi-asset pools. This inflates the higher-order fraction
 and, we show, is fixable.
 \end{enumerate}
@@ -171,30 +172,30 @@ delisted pools included. Survivor-only reconstruction captures $\sim$1/10 of the
 survivorship; we separate the two contributions and show even the \emph{sign of the
 time-trend} is convention-dependent. De-censoring revives the otherwise-untestable
 LP-resolution fork.
-\item \textbf{A convention-robust null on two events} (\S\ref{sec:null}): the reconstructed
+\item \textbf{A convention-independent null on two events} (\S\ref{sec:null}): the reconstructed
 structure is inert through \emph{both} the USDC depeg and the Curve/Vyper exploit under
-every choice we vary — the one representation- and sample-independent structural statement
-the data supports. Establishing it required a second data-quality guard: an integrity scan
+every choice we vary. It is the one representation- and sample-independent structural
+statement the data supports. Establishing it required a second data-quality guard: an integrity scan
 plus transient-dip repair that removes a spurious signal from the corrupted archive crawl
 captured mid-exploit.
 \end{itemize}
 
 A rigorous negative on the dynamics, and a demonstration that the descriptive metric is an
 artifact, together map where higher-order topology does and does not add value over
-pairwise methods — which we did not know in advance.
+pairwise methods, which we did not know in advance.
 
 \section{Related work}
 
 \textbf{Higher-order finance} is early-stage. \citet{forte2026} give the first hypergraph
 analysis of bank--firm credit networks (Central Bank of Argentina registry, adjusted
-H-eigenvector centrality) — TradFi credit and centrality, not persistent homology and not
+H-eigenvector centrality): TradFi credit and centrality, not persistent homology and not
 DeFi. \textbf{Return-space TDA} is by contrast saturated: persistent homology of return
 point clouds covers equities \citep{gidea2018}, FX, and crypto \citep{fx2025}; we keep this
 lineage strictly separate, as our complex is built from \emph{structure} (co-membership),
-not return correlation. \textbf{Graph analysis of DeFi} exists — \citet{uniswap2025} model
-Uniswap as a token-node/pool-edge network — and is exactly the pairwise baseline our
+not return correlation. \textbf{Graph analysis of DeFi} exists: \citet{uniswap2025} model
+Uniswap as a token-node/pool-edge network, exactly the pairwise baseline our
 decomposition sits atop; \citet{tradefidefi2025} survey the surrounding systemic-risk
-landscape. To our knowledge the persistent-homology / nerve treatment of DeFi liquidity
+literature. To our knowledge the persistent-homology / nerve treatment of DeFi liquidity
 structure is previously unoccupied, and, more to the point, the survivorship and
 representation sensitivities we quantify are not addressed in registry-based DeFi network
 work, which typically reconstructs history from the current registry without either
@@ -210,8 +211,8 @@ control.
 trend that is not there. \textbf{a} Essential $B_1$ on the de-censored full historical
 universe (blue) vs.\ on pools that survive to today (red); the shaded wedge is the loop
 structure a survivor-only study cannot see. \textbf{b} The higher-order fraction is flat on
-the full universe (green) but declines on survivors (red) — and that decline tracks the
-rising survivorship rate (grey, right axis), i.e.\ it is the survivor sample converging to
+the full universe (green) but declines on survivors (red), and that decline tracks the
+rising survivorship rate (grey, right axis): it is the survivor sample converging to
 the truth, not the network changing. Vertical line: the USDC depeg (2023-03-11).}
 \label{fig:decensor}
 \end{figure*}
@@ -222,7 +223,7 @@ current TVL, stablecoin flag) and per-pool daily TVL history
 (\texttt{yields.llama.fi/chart/\{pool\}}). The universe is Ethereum, stablecoin-flagged
 pools with $2$--$8$ underlying tokens.
 
-\paragraph{The standard reconstruction, and its hidden conditioning.} Because a pool's
+\paragraph{The standard reconstruction, and its hidden conditioning.} Since a pool's
 token set is fixed at deployment, the usual historical complex at date $t$ is today's
 registry filtered to pools with TVL above threshold at $t$. This silently conditions on
 survival: pools delisted before today are invisible. It has been treated (including in two
@@ -230,12 +231,12 @@ independent reviews of an earlier draft of this work) as an \emph{unrecoverable}
 
 \paragraph{De-censoring.} It is not unrecoverable. The Wayback Machine archived the
 registry endpoint roughly weekly from October 2022; each snapshot is the \emph{full}
-universe at that date — delisted pools included — with the identical schema. We fetch
+universe at that date, delisted pools included, with the identical schema. We fetch
 $\sim$\num{40} archived snapshots (Oct 2022--May 2025, monthly with weekly clusters around
 the USDC depeg and the July 2023 Curve/Vyper exploit), rebuild the complex on the full
 historical universe, and, per snapshot, also restrict to pools surviving to today,
 isolating the survivorship effect at fixed representation. True survivorship rises from
-\SI{24}{\percent} to \SI{41}{\percent} over the period (mechanically — recent pools are
+\SI{24}{\percent} to \SI{41}{\percent} over the period (mechanically: recent pools are
 likelier to persist); at the depeg only 66 of 274 universe pools survive, and the 208
 invisible pools were \SI{35}{\percent} of universe TVL (FRAX-3CRV \$474M,
 MIM/OUSD/TUSD/LUSD-3CRV, \ldots). Terra (May 2022) predates the archive and is not
@@ -249,7 +250,7 @@ through an integrity scan (\S\ref{sec:null}).
 \paragraph{Complex and filtration.} Vertices are tokens (by contract address); a pool with
 token set $\sigma$ contributes the filled simplex on $\sigma$ (downward closure). We
 filter by each pool's \emph{share} of universe TVL at date $t$, entering strong pools first
-at $f=-\log_{10}(\text{share})$ — a level-invariant weighting, so a result cannot be the
+at $f=-\log_{10}(\text{share})$, a level-invariant weighting, so a result cannot be the
 mechanical TVL drawdown of a depeg in disguise. We track $B_0$, essential $B_1$, $B_2$
 ($\equiv 0$ throughout), the 1-skeleton cycle rank $E-V+B_0$, and the higher-order
 fraction $\text{HO} = (E-V+B_0-B_1)/(E-V+B_0)$. Topology code is validated on
@@ -258,20 +259,20 @@ tetrahedron boundary has $B_2=1$).
 
 \paragraph{The two modeling axes.} We cross \textbf{sample} (survivor-only vs.\
 de-censored/full) with \textbf{LP representation}: \emph{lp\_vertex} keeps LP tokens as
-their own vertices (the archive's native form), \emph{resolved} expands the 3CRV LP token
+their own vertices (the archive's native form), \emph{resolved} replaces the 3CRV LP token
 (identified as \texttt{0x6c3f\ldots e490}, present in $\sim$68 metapools per snapshot in
-the archive) into $\{$DAI,\,USDC,\,USDT$\}$. Today's API base-resolves, so the survivor
+the archive) with $\{$DAI,\,USDC,\,USDT$\}$. Today's API base-resolves, so the survivor
 reconstruction is implicitly the \emph{resolved} fork; the archive's native form makes
-\emph{lp\_vertex} — and thus the comparison — available for the first time.
+\emph{lp\_vertex}, and with it the comparison, available for the first time.
 
 \paragraph{Event test and data-quality guard.} With snapshots at weekly cadence we test
 each event non-parametrically: is the pre$\to$post change large relative to the
 distribution of all consecutive-snapshot changes across the series? We run two events (the
 USDC depeg, 2023-03-07 $\to$ 03-16; the Curve/Vyper exploit, 2023-07-30 $\to$ 08-02) under
-both representations. Because a crawl captured mid-event can be corrupted, every snapshot
+both representations. Since a crawl captured mid-event can be corrupted, every snapshot
 first passes an \emph{integrity scan} (flag if universe TVL is $<0.6\times$ the median of
-its temporal neighbours); a flagged snapshot's \emph{transient dips} — pools materially
-live on both neighbours but $<0.5\times$ the smaller on the flagged crawl — are repaired by
+its temporal neighbours); a flagged snapshot's \emph{transient dips} (pools materially
+live on both neighbours but $<0.5\times$ the smaller on the flagged crawl) are repaired by
 neighbour interpolation, the snapshot-level analogue of the daily gap-fill. (An earlier
 daily survivor-only analysis using a placebo-window permutation test over 632 daily
 complexes reaches the same null; we report the de-censored version as primary evidence.)
@@ -284,7 +285,7 @@ complexes reaches the same null; we report the de-censored version as primary ev
 At fixed representation (lp\_vertex), essential $B_1$ is \textbf{40--58 on the full
 universe vs.\ 4--23 on survivors}, at every snapshot; the true universe is 3--4$\times$
 the survivor universe (234--430 vs.\ 63--178 pools). The object a survivor-only study
-analyses is a small, biased slice — and the bias is toward exactly the large multi-asset
+analyses is a small, biased slice, and the bias is toward exactly the large multi-asset
 pools that dominate the higher-order fraction.
 
 \subsection{The higher-order fraction is a modeling artifact}
@@ -336,11 +337,11 @@ removes $\sim$\SI{28}{\percent} of loops (essential $B_1$ $46.8\to33.8$) yet nea
 \num{0.37} (lp\_vertex) vs.\ \num{0.75} (resolved).
 \item \textbf{Survivorship amplifies in the same direction.} Holding representation =
 resolved (the paper-standard convention), full$\to$survivor pushes HO $0.75\to0.93$ at the
-depeg, because survivors are the big multi-asset pools.
+depeg, since survivors are the big multi-asset pools.
 \item \textbf{Even the trend is convention-dependent} (Fig.~\ref{fig:decensor}). Under
 resolved, the de-censored fraction genuinely \emph{declines} $0.80\to0.50$ as metapools
 delist; under lp\_vertex it is \emph{flat} at $0.36\pm0.04$. The survivor fraction declines
-under both — but that is the survivor sample converging to the full-universe value as
+under both, but that is the survivor sample converging to the full-universe value as
 survivorship rises (corr(survivor HO, survivorship) $=-0.92$ for lp\_vertex), not a change
 in the network.
 \end{itemize}
@@ -352,19 +353,19 @@ reflects economic exposure to base assets; lp\_vertex reflects composability str
 \textbf{The honest answer to ``how much is higher-order?'' is the range in
 Table~\ref{tab:2x2}, not a number.}
 
-\subsection{The null is the robust part}
+\subsection{The null is the part that holds}
 \label{sec:null}
 
-Against all of that fragility, the dynamics are stable — and stay stable on a second event
+Against all of that fragility, the dynamics are stable, and stay stable on a second event
 and after data-quality control. Table~\ref{tab:null} runs the de-censored event test on the
 USDC depeg: the change is \emph{smaller} than typical between-snapshot drift for every
-observable under \emph{both} representations — essential $B_1$ under resolved does not move
+observable under \emph{both} representations; essential $B_1$ under resolved does not move
 at all.
 
 \begin{table*}[t]
 \centering
 \caption{De-censored event test, full universe (USDC depeg, 2023-03-07 $\to$ 03-16; one of
-two events --- see text for the Curve/Vyper exploit). The largest stablecoin depeg on
+two events; see text for the Curve/Vyper exploit). The largest stablecoin depeg on
 record moves the structure less than routine month-to-month drift, under both LP
 conventions.}
 \label{tab:null}
@@ -384,19 +385,19 @@ gap, resolved & 1 & 17th & inert \\
 \paragraph{A second event, and a data-quality trap.} The Curve/Vyper exploit (2023-07-30)
 at first appears to break the null: on the de-censored universe essential $B_1$ jumps
 $47\to55$ (90th percentile) under lp\_vertex and $31\to37$ under resolved. But the integrity
-scan flags the single 08-02 crawl as the \emph{only} anomaly in the series — universe TVL
-halves ($\$3.04$B$\to\$1.73$B) then recovers — and 84\% of that drop is 10
+scan flags the single 08-02 crawl as the \emph{only} anomaly in the series (universe TVL
+halves, $\$3.04$B$\to\$1.73$B, then recovers), and 84\% of that drop is 10
 transient-dipped registry rows (6 distinct pools; DeFiLlama re-lists the same Curve pool
 under Convex), 8 of them FRAX (FRAX-USDC $\$435$M$\to\$73$M$\to\$451$M; FRAX-USDP
 $\$112$M$\to\$3$M$\to\$129$M): corrupted readings during the exploit, not a real drawdown
 (the exploit drained \$70M of \emph{ETH} pools, not stablecoins). Repairing the transient
-dips removes the signal entirely — essential $B_1$ returns to 48, its pre-event value
-(Fig.~\ref{fig:curve}) — and the Curve window is inert. The null therefore holds on
+dips removes the signal entirely: essential $B_1$ returns to 48, its pre-event value
+(Fig.~\ref{fig:curve}), and the Curve window is inert. The null therefore holds on
 \textbf{$N=2$} events, each confirmed only after snapshot data QC. The episode is itself a
 result: \emph{archived registry snapshots crawled during acute events can manufacture
-spurious topological signals — a second data-quality trap beside survivorship, and one the
-naive analysis would have reported as the sought-after ``topology detects the exploit''
-finding.}
+spurious topological signals. It is a second data-quality trap beside survivorship, and
+one the naive analysis would have reported as the sought-after ``topology detects the
+exploit'' finding.}
 
 \begin{figure*}[t]
 \centering
@@ -404,7 +405,7 @@ finding.}
 \caption{The Curve-exploit ``signal'' is a data glitch. \textbf{a} The pools driving the
 apparent event crater to near-zero on the single 2023-08-02 crawl (shaded); three of the
 four rebound to at or above their pre-event level within three weeks (FRAX-USDC
-\$435M$\to$\$73M$\to$\$451M) and FRAX-FPI partially — a \$1.3B ``drawdown'' that reverses
+\$435M$\to$\$73M$\to$\$451M) and FRAX-FPI partially. A \$1.3B ``drawdown'' that reverses
 on the next crawl is a reading error, not a liquidity event. \textbf{b} That corruption
 injects a spurious essential-$B_1$ spike ($47\to55$, red) that transient-dip repair
 removes ($\to48$, green), leaving the window inert. Dotted line: the exploit (2023-07-30);
@@ -412,33 +413,33 @@ the 10 dipped registry rows are 6 distinct pools, 8 rows of them FRAX.}
 \label{fig:curve}
 \end{figure*}
 
-Unlike the descriptive fraction, the null is robust to every choice we can vary —
+Unlike the descriptive fraction, the null holds under every choice we can vary:
 survivorship, LP representation, sampling cadence, and now two distinct stress events. It
-directly refutes the natural objection that the survivor view looks rigid only because it
-omits the pools that broke: restoring all 208 dead pools, the structure is still inert.
+directly refutes the natural objection that the survivor view looks rigid only through
+omitting the pools that broke: restoring all 208 dead pools, the structure is still inert.
 
 \section{Discussion}
 
 The fragility and the null resolve under one economic reading. Stablecoins are
 near-perfect substitutes pegged to a common numéraire, so the liquidity network is a
-hub-and-spoke around ``dollar-ness'' — mostly the 3pool and shallow wrappers — rather than
+hub-and-spoke around ``dollar-ness'' (mostly the 3pool and shallow wrappers) rather than
 a rich web of distinct multi-way dependencies. Two consequences follow: (i) \emph{how much}
-of that shallow scaffold counts as ``higher-order'' is genuinely under-determined, because
+of that shallow scaffold counts as ``higher-order'' is genuinely under-determined:
 whether a metapool's dependence on the 3pool is one relationship (an LP vertex) or three
-(resolved base assets) is a modeling stance, not a fact — hence the 0.31--0.93 range; and
+(resolved base assets) is a modeling stance, not a fact, hence the 0.31--0.93 range; and
 (ii) a depeg is prices and flows moving \emph{within} a fixed scaffold, not the scaffold
-re-wiring — hence the null.
+re-wiring, hence the null.
 
 The transferable lesson is methodological, and it is three traps deep. Registry-based
 reconstruction is the default in empirical DeFi network research; it silently conditions on
 survival (discarding $\sim$90\% of the loop structure), it hides an unremarked representation
-choice (which, with survivorship, can flip a headline descriptive claim), and — as testing
-the Curve exploit revealed — a crawl captured during an acute event can carry corrupted TVL
+choice (which, with survivorship, can flip a headline descriptive claim), and, as testing
+the Curve exploit revealed, a crawl captured during an acute event can carry corrupted TVL
 that \emph{manufactures} a topological signal. The last is the sharpest cautionary note: the
 naive pipeline would have reported the FRAX-glitch spike as the sought-after ``topology
-detects the exploit'' result. All three are cheap to address — de-censor via the Internet
-Archive, report the representation sensitivity, and run an integrity scan with transient-dip
-repair — but none is addressed by simply collecting more data. Where structural higher-order
+detects the exploit'' result. All three are cheap to address (de-censor via the Internet
+Archive, report the representation sensitivity, and run an integrity scan with
+transient-dip repair), but none is addressed by simply collecting more data. Where structural higher-order
 TDA might still earn its keep is where these caveats bite less: non-substitute universes
 (mixed collateral, cross-asset lending) with heterogeneous multi-way dependence, and slow
 regime changes that actually re-wire membership.
@@ -467,23 +468,23 @@ resolved; we run both explicitly rather than mixing them.
 
 Measured rather than asserted, the higher-order structure of Ethereum stablecoin liquidity
 has no convention-free size: the higher-order fraction ranges 0.31--0.93 across two
-modeling choices — LP-token representation (the larger) and survivorship — that
+modeling choices, LP-token representation (the larger) and survivorship, that
 registry-based DeFi network studies routinely leave unexamined, and even its time-trend flips sign
 between conventions. Survivor-only reconstruction, the field default, sees roughly a tenth
 of the loop structure; Internet-Archive de-censoring recovers the rest and revives an
 otherwise-untestable representation fork. The one convention-independent structural result
 is a null: through both the largest stablecoin depeg on record and the Curve/Vyper exploit
-the reconstructed structure is inert, moving less than routine drift — and reaching that
+the reconstructed structure is inert, moving less than routine drift. Reaching that
 conclusion required catching a third trap, a corrupted event-window crawl that would
 otherwise have read as a spurious detection. Report higher-order DeFi structure as a
 sensitivity range, de-censor the registry, scan for event-window data corruption, and treat
-the robust dynamics — not the fragile levels — as the finding.
+the stable dynamics, not the fragile levels, as the finding.
 
 \section*{Reproducibility}
 All code, the computed observable series, and figures are at
 \url{https://github.com/adamLEVi16/topology-engine} (\texttt{defi\_topology/}). The pipeline
 runs from the free DeFiLlama API and the Internet Archive with no authentication; the raw
-registry snapshots ($\sim$390\,MB) are re-fetched rather than committed. Because the
+registry snapshots ($\sim$390\,MB) are re-fetched rather than committed. Since the
 Wayback Machine is append-only, resolving a target date to its ``closest crawl'' can drift
 over time, so the exact snapshot timestamps used are recorded in the series JSON and the
 series is rebuilt byte-for-byte with \texttt{decensor.py --pinned} (each timestamp maps to a
