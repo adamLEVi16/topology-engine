@@ -3,7 +3,6 @@ charts/
 __pycache__/
 !figs/
 !figs/*.png
-!paper/rq1_profile.png
 archive/
 !paper/decensor.png
 !paper/representation.png

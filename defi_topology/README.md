@@ -1,70 +1,84 @@
-# DeFi Higher-Order Topology — hardened research package
+# DeFi Higher-Order Topology — research package
 
-Computational topology (simplicial complexes, persistent homology) applied to DeFi
-liquidity-pool structure through systemic stress events. Undergraduate research project.
+Computational topology (simplicial complexes, persistent homology) applied to the
+structure of Ethereum stablecoin liquidity through systemic stress events. Undergraduate
+research project (A. Levine, Hofstra).
 
-This directory contains the original MVP **plus** the hardened build that implements the
-blueprint's method section and the RESULTS "next steps", and re-runs the USDC-depeg study
-with proper inference.
+The project ran in two stages. The **hardened MVP** (survivor-only) is preserved for the
+record; the **de-censored v2** — which recovers the full historical universe from the
+Internet Archive and is the current paper — supersedes several of its findings. Read the
+docs in order and the arc is clear.
 
 ## Read in this order
 
 1. `blueprint_v2.md` — the research plan.
-2. `RESULTS.md` — findings from the first (MVP) run.
-3. `METHODS.md` — **what the hardened build adds, and how it refines/overturns those
-   findings.** Start here for anything new.
+2. `RESULTS.md` — findings from the first (survivor-only MVP) run.
+3. `METHODS.md` — the hardened build; refines/overturns the MVP findings.
+4. `DECENSORING.md` — **the v2 result. Start here for the current paper.** De-censoring
+   survivorship via the archive; the higher-order fraction is a modeling artifact; the
+   robust null on two events.
+5. `paper/main.pdf` — the manuscript (`paper/main.tex` source).
 
 ## Files
 
 | File | What it is |
 |---|---|
-| `blueprint_v2.md` | Research plan (v2). |
-| `RESULTS.md` | Original MVP findings (n=1, USDC depeg). |
-| `METHODS.md` | Hardened-build methods, findings, and literature check. |
-| `pipeline_original.py` | The MVP pipeline (diff baseline). |
-| `pipeline.py` | Hardened pipeline: gap-fill, B₂, LP fork, coverage guard. |
+| `blueprint_v2.md`, `RESULTS.md`, `METHODS.md`, `DECENSORING.md` | Plan + findings (see order above). |
+| `REVIEW_GUIDE.md` | Orientation for a code reviewer. |
+| `pipeline.py` | Core engine: nerve complex, share filtration, gap-fill, transient-dip repair, LP fork, observables. |
+| `pipeline_original.py` | The pre-hardening MVP (diff baseline only). |
+| `decensor.py` | **v2 engine.** Internet-Archive de-censoring: full historical universe, the 2×2, event tests, integrity scan + `repair_transient_dips`. |
 | `inference.py` | Placebo-window permutation test + block-bootstrap CIs. |
-| `robustness.py` | Threshold × window × LP-fork sweep. |
-| `make_series.py` | Build a long continuous daily series for the placebo test. |
 | `baselines.py` | Pairwise 1-skeleton graph metrics + the RQ3 side-by-side table. |
-| `profile.py` | RQ1 threshold-profile figure (skeleton vs nerve across the filtration). |
 | `landscapes.py` | Exact landscape-norm audit (verifies the "identically zero" claim). |
+| `robustness.py` | Threshold × window × LP-fork sweep. |
+| `make_series.py` | Build a long continuous daily (survivor) series for the placebo test. |
+| `decensor_fig.py`, `paper_figures.py` | Generate the three paper figures. |
 | `_fetch.py` | Standalone chart-cache warmer (run once). |
-| `tests/test_toy.py` | Hand-checkable topology validation. |
-| `*_series.json`, `*_audit.json`, `rq1_profile.json` | Generated evidence. |
-| `figs/` | Committed figures (`rq1_profile.png`). |
+| `tests/test_toy.py` | Hand-checkable topology validation (8 cases). |
+| `paper/` | `main.tex` + compiled `main.pdf` + the three figures. |
+| `*_series.json`, `*_audit.json` | Generated evidence (safe to delete and rebuild). |
+| `figs/` | Committed figures (`decensor.png`, `representation.png`, `curve_artifact.png`). |
 
 ## Quickstart
 
 ```bash
-pip install --break-system-packages gudhi matplotlib
-python _fetch.py                                   # warm ~600-pool chart cache (once)
-python -m pytest tests/test_toy.py -q              # 8/8 topology assertions
-python pipeline.py --event 2023-03-11 --placebo 2023-06-15 --tag usdc_resolved
+pip install --break-system-packages gudhi matplotlib numpy
+python -m pytest tests/test_toy.py -q            # 8/8 topology assertions
+
+# v2 (de-censored) — the current paper
+python decensor.py --build --start 2022-10-01 --end 2025-06-01 --step 30 \
+    --dense-start 2023-02-01 --dense-end 2023-04-20 --dense-step 7
+python decensor_fig.py                           # central survivorship figure
+python paper_figures.py                          # representation + Curve-artifact figures
+
+# hardened survivor-only baseline (corroborating)
+python _fetch.py                                 # warm ~600-pool chart cache (once)
 python make_series.py --start 2022-04-09 --end 2023-12-31 --out long_series.json
 python inference.py long_series.json --event 2023-03-11 --metric essB1
-python robustness.py --event 2023-03-11 --placebo 2023-06-15
-python baselines.py --event 2023-03-11 --placebo 2023-06-15    # pairwise RQ3 table
-python profile.py                                              # RQ1 central figure
-python landscapes.py                                           # landscape audit
-python pipeline.py --event 2022-05-10 --placebo 2023-06-15 --tag terra   # Terra
+python baselines.py --event 2023-03-11 --placebo 2023-06-15
+python landscapes.py
 ```
 
-`charts/` (the per-pool cache) and generated `*.png` figures are git-ignored; series JSONs
-are committed as evidence.
+`charts/` and `archive/` (the caches) are git-ignored; the small series/audit JSONs and the
+three paper figures are committed as evidence.
 
-## Headline of the hardened run
+## Headline (v2)
 
-Against a **520-window placebo distribution**, the USDC-depeg window is unremarkable on
-every topological observable (essB₁ at the 48.8th percentile, p ≈ 0.98). The data-gap fix
-removes an artifact that had inflated the original "destabilization" reading, and the
-H₀ signal does not survive a proper placebo. The LP-resolution fork is provably inert on
-the survivor universe (0 / 602 pools embed the 3CRV basket). The two robust results are
-the **methodological** one (persistence landscapes ≈ 0 on this complex) and the
-**structural/survivorship** ceiling. See `METHODS.md` for the full table and caveats.
+**Registry-based reconstruction — the field default — is severely biased, and the biases
+determine the answer.** Reconstructing from pools that survive to today sees only ~1/10 of
+the loop structure; Internet-Archive snapshots recover the rest. The higher-order fraction
+then has *no convention-free value* — it swings **0.31–0.93** across LP-token representation
+(the larger driver) × survivorship, and even its time-trend flips sign between conventions.
+The one result robust to every choice (survivorship, representation, cadence) is a **null**:
+through both the USDC depeg and the Curve/Vyper exploit the structure is inert — reached
+only after an integrity scan removes a corrupted event-window crawl that would otherwise
+read as a spurious detection. See `DECENSORING.md` and the paper.
 
 ## The one honest caveat to carry into every claim
 
-Only ~12.5% of today's stablecoin pools existed at the depeg date, and that is an *upper
-bound* on usable history — delisted pools are unrecoverable from this API. All findings are
-survivor-conditional.
+Findings remain **survivor-and-convention conditional**, and Terra (May 2022) predates the
+archive. But note what v2 changed: delisted pools are *not* unrecoverable (the earlier
+"unrecoverable ceiling" framing was wrong) — true survivorship is 24–41% and is de-censored
+here; the residual caveats are the two defensible LP conventions, weekly (not daily) archive
+cadence, and Ethereum stablecoins only.

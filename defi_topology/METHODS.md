@@ -165,11 +165,17 @@ a depeg is prices and flows, not structure. (Registry-drift note: the refreshed 
 599 vs 602 pools and the series now starts 2022-04-09; essB₁'s event percentile moved only
 48.8 → 53.6 — the null is stable under drift.)
 
-### 2.8 RQ1 measured: most loop structure is higher-order fills, and the fraction is falling (`profile.py`)
+### 2.8 RQ1 measured on survivors: higher-order fraction 52–77%, falling
 
-The threshold-profile figure (`figs/rq1_profile.png`, the paper's central descriptive
-figure) sweeps the share threshold at five snapshot dates. At the operating threshold
-(1e-5), the fraction of 1-skeleton loops filled by ≥3-asset pools is:
+> **[Superseded by `DECENSORING.md` Finding 2.]** This survivor-only threshold sweep read
+> the higher-order fraction as a *declining majority* (52–77%). De-censoring later showed
+> that is an artifact of **two** modeling choices — LP-token representation (the larger
+> driver) and survivorship — and that the de-censored, composability-preserving fraction is
+> a *flat minority* (~0.36). Kept as the interim finding; the generating script
+> (`profile.py`) and its figure were retired in the v2 reframing.
+
+Sweeping the share threshold at five snapshot dates, at the operating threshold (1e-5) the
+fraction of 1-skeleton loops filled by ≥3-asset pools was:
 
 | 2022-05-10 | 2022-09-15 | 2023-03-11 | 2023-06-15 | 2023-12-15 |
 |---|---|---|---|---|

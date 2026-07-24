@@ -1,95 +1,102 @@
 # Reviewer's guide — `defi_topology/`
 
-Branch: `claude/research-idea-feedback-yir8p7`. ~1,420 lines of Python across 10 files,
+Branch: `claude/research-idea-feedback-yir8p7`. ~1,640 lines of Python across 12 files,
 plus generated evidence (JSON), docs, and the preprint. This orients a reviewer to what
 each file does, how the data flows, and — most importantly — **where a bug would change a
 claim in the paper**, so the review can focus there.
 
-Everything runs from the free DeFiLlama API (no auth). Setup:
+The project has two reconstruction paths that share one topology core: a **survivor-only**
+path (today's DeFiLlama registry, `pipeline.py` + friends — the hardened MVP) and the
+**de-censored** path (Internet-Archive registry snapshots, `decensor.py` — the v2 paper).
+Read `DECENSORING.md` first for the v2 findings.
+
+Setup (both paths, no auth):
 ```bash
 pip install --break-system-packages gudhi matplotlib numpy
-python _fetch.py                          # warm the ~600-pool chart cache (once, ~3 min)
 python -m pytest tests/test_toy.py -q     # or: python tests/test_toy.py
 ```
 
 ## Data flow
 
 ```
-_fetch.py ──> charts/<pool>.json   (per-pool daily TVL)  + charts/universe.json (registry)
-                    │
-   pipeline.py  ────┤  universe() / fetch_charts() / load_charts()+forward_fill()
-                    │  build_complex() → day_metrics() → window() → <tag>_series.json, .png
-                    │
-     ┌──────────────┼───────────────┬────────────────┬───────────────┐
- make_series.py  baselines.py    landscapes.py     profile.py     robustness.py
- long_series.json  baseline_long   landscape_audit   rq1_profile     (prints table)
-     │             .json+RQ3 table  .json             .json+figure
-     └──> inference.py  (placebo permutation + block bootstrap on any *_series.json)
-                    │
-              paper/main.tex   (every number traces to METHODS.md → one of the above)
+                       ┌─ survivor path (hardened MVP) ─────────────────────────────┐
+_fetch.py ─> charts/<pool>.json ─> pipeline.py: load_charts()+forward_fill()
+                                    +repair_universe_dips() ─> build_complex()/day_metrics()
+                                        │
+              make_series.py / baselines.py / landscapes.py / robustness.py
+              long_series.json / baseline_long.json / landscape_audit.json
+                                        └─> inference.py (placebo permutation + bootstrap)
+
+                       ┌─ de-censored path (v2, THE PAPER) ─────────────────────────┐
+web.archive.org ─> archive/<ts>.json ─> decensor.py: observables(resolve=T/F),
+   (registry snapshots)                   repair_transient_dips(), 2×2, event tests
+                                        └─> decensor_series.json ─> decensor_fig.py,
+                                                                    paper_figures.py
+
+both ─> paper/main.tex  (Table 1 = 2×2; Fig 1-3; numbers trace to DECENSORING.md/METHODS.md)
 ```
 
 ## The code (what to review)
 
 | File | Lines | Role |
 |---|---:|---|
-| **`pipeline.py`** | 316 | **Core.** Registry, chart caching, `forward_fill` (gap repair), `resolve_tokens` (LP fork), `build_complex` (the nerve), `day_metrics` (observables), `window` (coverage guard), survivorship, plotting. Everything else imports this. |
-| `inference.py` | 179 | `placebo_permutation` (the event-study test) and `block_bootstrap_ci`. No topology — pure stats on a series. |
-| `baselines.py` | 190 | Seven pairwise 1-skeleton graph metrics + the RQ3 head-to-head permutation. Contains a runtime `selfcheck` that the graph equals the complex's 1-skeleton. |
-| `landscapes.py` | 152 | Exact persistence-landscape norms; verifies the "H₁ is all-essential → landscapes ≡ 0" claim. |
-| `profile.py` | 117 | RQ1 threshold-profile figure (`figs/rq1_profile.png`). |
-| `robustness.py` | 71 | Sweep over dust cap × window size × LP fork. |
-| `make_series.py` | 46 | Build one long continuous daily series for the placebo test. |
-| `_fetch.py` | 51 | Standalone chart-cache warmer. |
-| `tests/test_toy.py` | 101 | Hand-checkable topology validation (see below). |
-| `pipeline_original.py` | 196 | The pre-hardening MVP, kept **only as a diff baseline** — not for review. `git diff` it against `pipeline.py` to see every change. |
+| **`pipeline.py`** | 347 | **Topology core.** `build_complex` (the nerve), `day_metrics` (observables), `resolve_tokens` (LP fork), `forward_fill` (zero/gap fill), `repair_universe_dips` (daily transient-dip guard), `window`, survivorship. Imported everywhere. |
+| **`decensor.py`** | 247 | **v2 engine.** Wayback fetch/cache (`closest_snapshot`, `fetch_registry`), `observables(resolve=…)`, `build_series` (the de-censored 2×2), `repair_transient_dips` + integrity scan. |
+| `baselines.py` | 200 | Seven pairwise 1-skeleton graph metrics + RQ3 permutation; runtime `selfcheck` that the graph == the complex's 1-skeleton. |
+| `inference.py` | 194 | `placebo_permutation` (event test) + `block_bootstrap_ci`. Pure stats. |
+| `landscapes.py` | 151 | Exact landscape norms; verifies "H₁ all-essential → landscapes ≡ 0". |
+| `paper_figures.py` | 149 | Fig 2 (representation) + Fig 3 (Curve artifact). |
+| `robustness.py` | 71 | Sweep over dust cap × window × LP fork (survivor). |
+| `decensor_fig.py` | 80 | Fig 1 (survivorship). |
+| `make_series.py` | 49 | Build the long survivor daily series for the placebo test. |
+| `_fetch.py` | 54 | Survivor chart-cache warmer. |
+| `tests/test_toy.py` | 101 | Hand-checkable topology validation (8 cases). |
+| `pipeline_original.py` | 196 | Pre-hardening MVP — **diff baseline only, not for review.** |
 
 ## Where bugs would matter most (suggested review priority)
 
-These are load-bearing for the paper's claims; a defect here moves a number in the abstract.
+Load-bearing for the paper's claims; a defect here moves a number in the abstract.
 
 1. **`pipeline.build_complex` / `day_metrics` (nerve + persistence).** Each pool inserts a
-   *filled* simplex on its token set at filtration `f = -log10(share)`; loops are coverage
-   holes. Check: vertex-id assignment via `setdefault`, the `edges` set, `make_filtration_
-   non_decreasing`, `compute_persistence(persistence_dim_max=True)`, and the `betti_numbers`
-   padding to `[B0,B1,B2]`. The whole event study rides on these being right. Anchor:
-   `tests/test_toy.py` independently pins B0/B1/B2, skeleton cycle rank, and the gap on six
-   hand-worked complexes (hollow vs filled triangle, square, tetrahedron boundary with
-   B₂=1, two components) — a reviewer should sanity-read those expected values.
-2. **Filtration direction & the essential-class claim.** `-log10(share)` means high-share
-   pools enter first (low ε). The paper's methodological claim ("all H₁ essential →
-   landscapes ≡ 0") depends on this being the intended semantics. `landscapes.py` counts
-   finite vs infinite H₁ bars; confirm the split is computed correctly.
-3. **`inference.placebo_permutation` — exchangeability.** Windows slide across a 632-day
-   series; placebo windows must be full-length and fully disjoint from the event window
-   (centers within `2*half` of the event are excluded — fixed after external review; see
-   METHODS.md §2.10), and `n_disjoint_equivalent` reports the autocorrelation-honest
-   effective sample. The **known failure mode is non-stationarity at the series edge**
-   (universe grows 45→96 pools), which makes the *Terra* percentiles invalid — this is
-   documented and the paper does not use them. Verify the two-sided p and the
-   `p_value_floor = 1/n` guard. For USDC (mid-series) the test is used.
-4. **`forward_fill` semantics.** Bridges interior gaps (absent samples or one-day zeros
-   between positives) up to `max_gap=3`, within a pool's active span; does not resurrect a
-   truly dead pool. Check the active-span boundaries and that it can't fill across a genuine
-   death > 3 days. This fix removed the 2023-02-11 artifact.
-5. **`baselines.selfcheck`.** Asserts the graph's (V, E) and component count equal the
-   complex's 1-skeleton and B₀ — the guarantee that RQ3's "pairwise vs topology" is
-   apples-to-apples. Confirm the assertion is real and runs.
-6. **`resolve_tokens` (LP fork).** Collapses a recognised basket only on a *strict* subset
-   (metapool), leaving the bare 3pool intact. Empirically a no-op on all real data (0/~600
-   pools) — the toy test exercises the non-trivial path.
+   *filled* simplex at `f = -log10(share)`; loops are coverage holes. Check vertex-id
+   `setdefault`, the `edges` set, `make_filtration_non_decreasing`,
+   `compute_persistence(persistence_dim_max=True)`, `betti_numbers` padding to `[B0,B1,B2]`.
+   Anchor: `tests/test_toy.py` independently pins B0/B1/B2, cycle rank and gap on six
+   hand-worked complexes (incl. tetrahedron boundary with B₂=1).
+2. **`decensor.observables` + `resolve_lp` (the 2×2, Table 1).** Same nerve construction on
+   an archive snapshot, with `resolve=True` expanding 3CRV → {DAI,USDC,USDT}. The paper's
+   central claim — the higher-order fraction swings 0.31–0.93 — rides on this. Confirm the
+   3CRV address, that resolution has no collisions, and that lp_vertex/resolved differ only
+   by this expansion. **NB:** unlike the survivor registry (where the LP fork is a no-op
+   because 0 metapools survive), on the archive ~68 metapools per snapshot make it the
+   *dominant* driver — the opposite of the MVP claim, by design.
+3. **`inference.placebo_permutation` — exchangeability.** Full-length windows, fully
+   disjoint from the event (`|c−ev| > 2·half`); `n_disjoint_equivalent` reports the honest
+   effective sample. Known failure: non-stationarity at the series edge makes the *Terra*
+   percentiles invalid (documented, not used). Verify two-sided p and `p_value_floor = 1/n`.
+4. **The data-quality guards (both paths).** `decensor.repair_transient_dips` (archive) and
+   `pipeline.repair_universe_dips` (daily) must flag only whole days whose *universe* TVL
+   craters-and-recovers, then repair the dipped pools — so a real gradual depeg is never
+   touched. This is what dissolves the spurious Curve "signal" (Fig 3); confirm the
+   integrity threshold and that the event windows contain no flagged days.
+5. **`baselines.selfcheck`.** Asserts graph (V,E) and components == the complex's 1-skeleton
+   and B₀ — the guarantee RQ3 is apples-to-apples. Confirm it runs (and the sampled version
+   in `build_range`).
+6. **Filtration direction.** `-log10(share)` ⇒ high-share pools enter first; the landscape
+   claim depends on this. `landscapes.py` counts finite vs infinite H₁ bars.
 
 ## Already-known limitations (please don't re-report)
 
-Documented in `METHODS.md` and the paper's Limitations section: survivorship (7.5–12.5%
-upper bounds), N=2 events, single chain, the LP fork being untestable on real data, and the
-methodological caveat being "expected, not deep." Curated defaults worth a comment but not
-bugs: `MINSHARE=1e-5` dust cap, `max_gap=3`, the `LP_BASES` map (3CRV only).
+Documented in `DECENSORING.md`/`METHODS.md` and the paper: findings are survivor- and
+convention-conditional; **two defensible LP conventions with no tie-breaker** (0.31–0.93
+range); Terra predates the archive; archive cadence is weekly not daily; Ethereum
+stablecoins only. Curated defaults worth a comment but not bugs: `MINSHARE=1e-5`,
+`max_gap=3`, `LP_BASES` = {3CRV}, integrity thresholds (`tvl_frac=0.6`, `pool_frac=0.5`).
 
 ## Docs, evidence, paper (context, not code review)
 
-- `blueprint_v2.md` — research plan. `RESULTS.md` — original MVP findings. `METHODS.md` —
-  hardened findings with every cited number. `README.md` — orientation.
-- `*_series.json`, `baseline_long.json`, `landscape_audit.json`, `rq1_profile.json` —
-  regenerated evidence; safe to delete and rebuild.
-- `paper/main.tex` (+ `main.pdf`) — the preprint; numbers trace back to `METHODS.md`.
+- `blueprint_v2.md` — plan. `RESULTS.md` — MVP findings. `METHODS.md` — hardened findings.
+  `DECENSORING.md` — **v2 findings (start here).** `README.md` — orientation.
+- `long_series.json`, `baseline_long.json`, `landscape_audit.json`, `decensor_series.json`
+  — regenerated evidence; safe to delete and rebuild.
+- `paper/main.tex` (+ `main.pdf`, 3 figures) — the preprint.
