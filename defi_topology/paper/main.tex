@@ -21,8 +21,16 @@
 \newcommand{\num}[1]{#1}
 \newcommand{\SI}[2]{#1\,#2}
 \newcommand{\SIrange}[3]{#1--#2\,#3}
-\usepackage[hidelinks]{hyperref}
 \usepackage{xcolor}
+% Links are live but restrained: a dark navy that stays legible in greyscale print
+% rather than the default saturated blue/green/red, which looks unfinished.
+\definecolor{linknavy}{HTML}{1A4C7C}
+\usepackage[colorlinks=true,linkcolor=linknavy,citecolor=linknavy,urlcolor=linknavy,
+            breaklinks=true]{hyperref}
+% Clickable external identifiers for the bibliography. The visible text stays the bare
+% DOI / arXiv id, so the reference is still complete on paper.
+\newcommand{\doi}[1]{\href{https://doi.org/#1}{doi:#1}}
+\newcommand{\arxiv}[1]{\href{https://arxiv.org/abs/#1}{arXiv:#1}}
 \usepackage[font=small,labelfont=bf,labelsep=space]{caption}
 \usepackage{titlesec}
 \usepackage{fancyhdr}
@@ -493,24 +501,30 @@ and the integrity scan / \texttt{repair\_transient\_dips} data-quality guard).
 
 \begin{thebibliography}{9}
 \small
+% External identifiers are hyperlinked via \doi / \arxiv (defined in the preamble). Every
+% DOI below was checked against Crossref and every arXiv id against the arXiv API; nothing
+% here is a guessed identifier.
 \bibitem[Aufiero et al.(2025)]{tradefidefi2025} Aufiero, S., Bartolucci, S.,
 Caccioli, F., Vivo, P. (2025). Mapping microscopic and systemic risks in TradFi and
-DeFi: a literature review. arXiv:2508.12007.
+DeFi: a literature review. \arxiv{2508.12007}.
 \bibitem[Bick et al.(2023)]{bick2023} Bick, C., Gross, E., Harrington, H.~A., Schaub,
-M.~T. (2023). What are higher-order networks? \emph{SIAM Review} 65(3).
+M.~T. (2023). What are higher-order networks? \emph{SIAM Review} 65(3), 686--731.
+\doi{10.1137/21M1414024}.
 \bibitem[de Favereau de Jeneret \& Diamantis(2025)]{fx2025} de Favereau de Jeneret,
 P., Diamantis, I. (2025). Topology of currencies: persistent homology for FX
-co-movements: a comparative clustering study. arXiv:2510.19306.
+co-movements: a comparative clustering study. \arxiv{2510.19306}.
 \bibitem[Eisenberg \& Noe(2001)]{eisenberg2001} Eisenberg, L., Noe, T.~H. (2001).
-Systemic risk in financial systems. \emph{Management Science} 47(2).
+Systemic risk in financial systems. \emph{Management Science} 47(2), 236--249.
+\doi{10.1287/mnsc.47.2.236.9835}.
 \bibitem[Forte(2026)]{forte2026} Forte, F.~D. (2026). It takes two to tango, but more
 to assess systemic risk: credit networks through the lens of hypergraphs.
-arXiv:2607.10943.
+\arxiv{2607.10943}.
 \bibitem[Gidea \& Katz(2018)]{gidea2018} Gidea, M., Katz, Y. (2018). Topological data
-analysis of financial time series: landscapes of crashes. \emph{Physica A} 491.
+analysis of financial time series: landscapes of crashes. \emph{Physica A} 491,
+820--834. \doi{10.1016/j.physa.2017.09.028}.
 \bibitem[Yan \& Tessone(2025)]{uniswap2025} Yan, T., Tessone, C.~J. (2025). Network
 analysis of Uniswap: centralization and fragility in the decentralized exchange
-market. arXiv:2503.07834.
+market. \arxiv{2503.07834}.
 \end{thebibliography}
 
 \end{document}
