@@ -26,6 +26,9 @@ import decensor as D
 import figstyle as F
 
 DEPEG = datetime.date(2023, 3, 11)
+DETECT = 5          # 95th pct of routine |delta|, gap-matched (event_test.py)
+DEPEG_TVL_LOST = 0.8   # % of universe TVL held by pools that delisted across the depeg
+DEPEG_DELTA = 1        # observed |delta| in essential B1 across the depeg window
 CURVE = datetime.date(2023, 7, 30)
 
 
@@ -180,7 +183,57 @@ def main():
     M = snap_index()
     fig_representation(M)
     fig_curve_artifact(M)
+    fig_injection()
 
+
+
+# ============================================================ figure 4
+def fig_injection(path="injection.json"):
+    """Dose-response of essential B1 to synthetic damage, from injection.py.
+
+    The point of the panel is the distance between the detection threshold and where the
+    real events actually sat: the depeg destroyed 0.8% of universe TVL in pools that
+    delisted, an order of magnitude below anything this test could resolve."""
+    if not os.path.exists(path):
+        print(f"skipping figs/injection.png ({path} missing; run injection.py --json {path})")
+        return
+    with open(path) as fh:
+        r = json.load(fh)
+
+    tx = [100 * x["actual"] for x in r["share_largest"]]
+    ty = [x["delta"] for x in r["share_largest"]]
+    rx = [100 * x["target"] for x in r["share_random"]]
+    ry = [x["delta_mean"] for x in r["share_random"]]
+    rs = [x["delta_sd"] for x in r["share_random"]]
+
+    fig, ax = plt.subplots(figsize=(F.FULLWIDTH, 3.0))
+    ax.fill_between(rx, [a - b for a, b in zip(ry, rs)], [a + b for a, b in zip(ry, rs)],
+                    color=F.BLUE, alpha=.13, lw=0)
+    ax.plot(rx, ry, "o-", color=F.BLUE,
+            label="diffuse damage (random pools, same TVL share)")
+    ax.plot(tx, ty, "s-", color=F.DARKRED,
+            label="targeted damage (largest pools first)")
+    ax.axhline(DETECT, color=F.GREY, ls=(0, (5, 3)), lw=1.0)
+    # the two annotations sit far apart on purpose: the threshold label goes right, where
+    # only the flat targeted curve is, and the event label goes left above the star.
+    ax.annotate("detection threshold (95th pct of routine drift)",
+                xy=(37, DETECT + 0.7), fontsize=7.4, color=F.GREY, va="bottom")
+    ax.plot([DEPEG_TVL_LOST], [DEPEG_DELTA], "*", color=F.PURPLE, ms=12, zorder=5)
+    ax.annotate("USDC depeg as observed:\n15 pools delisted, 0.8% of TVL",
+                xy=(DEPEG_TVL_LOST, DEPEG_DELTA + 0.4), xytext=(2.5, 13),
+                fontsize=7.4, color=F.PURPLE, va="bottom", ha="left",
+                arrowprops=dict(arrowstyle="-", color=F.PURPLE, lw=0.8,
+                                shrinkA=2, shrinkB=4))
+    ax.set_xlabel("universe TVL removed (%)")
+    ax.set_ylabel("$|\\Delta|$ essential $B_1$")
+    ax.set_xlim(-2, 72)
+    ax.set_ylim(-1, 33)
+    ax.legend(loc="upper left")
+    F.grid(ax)
+    fig.savefig("figs/injection.png")
+    plt.close(fig)
+    print(f"wrote figs/injection.png  (threshold {DETECT}; diffuse crosses it at "
+          f"{next((x for x, y in zip(rx, ry) if y >= DETECT), None):.0f}% of TVL)")
 
 if __name__ == "__main__":
     main()

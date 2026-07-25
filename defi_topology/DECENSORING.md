@@ -111,6 +111,62 @@ depeg placebo percentile by 0.0 (54.5th, $p=0.91$), because their essB₁ was al
 unremarkable; the guard is for consistency and future-proofing, not because it moved a
 number.
 
+## Finding 5 — the null is now *bounded*, and the event test was tilted toward it
+
+Two problems with the event test as originally run, both found by re-checking rather than
+by review:
+
+1. **The reference distribution was not spacing-matched.** Crawl gaps run 1–83 days
+   (median 26) while the depeg window is 9 days and the exploit window 3. Drift grows with
+   the gap — mean |Δ| in essential B₁ is **1.40 on intervals ≤14 days vs 2.44 across all
+   intervals** — so judging a 9-day change against a month-dominated reference set made the
+   event look routine *by construction*. The test was biased toward the null it reported.
+2. **Ties were not handled.** The observables are small integers, so the percentile
+   depends on whether ties count below or at the event value. On the depeg that choice
+   alone moves essential B₁ **from the 23rd to the 49th percentile** on identical data — a
+   26-point swing from a convention, in a paper about convention-dependence.
+
+`event_test.py` fixes both (gap-matched reference set, mid-rank percentiles). The null
+survives, and the corrected statement is *sharper*: an event window is indistinguishable
+from an arbitrary window of the same length, rather than unusually quiet.
+
+| observable | repr. | Δ depeg | Δ exploit | mid-rank pct (matched) | 95th-pct detect |
+|---|---|---|---|---|---|
+| essential B₁ | lp_vertex | 1 | 1 | 53rd | 5 |
+| gap | lp_vertex | 1 | 1 | 47th | 7 |
+| essential B₁ | resolved | 0 | 0 | 27th | 4 |
+| gap | resolved | 1 | 1 | 50th | 11 |
+
+**The injection test (`injection.py`) converts the null from an absence of evidence into a
+bound.** Damaging a real snapshot synthetically:
+
+- **The measure responds to pool count, not to value.** Deleting the 8 largest pools takes
+  54% of universe TVL and moves essential B₁ by 3 (under threshold); deleting a random
+  fifth of TVL takes ~60 pools and moves it by 7. Targeted destruction stays under
+  threshold to 70% of TVL; the diffuse threshold is **20% of TVL on all four snapshots
+  tested** (2022-10, 2023-03, 2024-05, 2025-05).
+- **The depeg was an order of magnitude below detectability.** 15 pools delisted holding
+  **0.8% of universe TVL**. Universe TVL fell 24% across the window, but nearly all of that
+  was repricing inside pools that survived — which is the §6 economic reading *measured*
+  rather than asserted.
+- It also supplies the **positive control** the two observed events cannot: both are
+  episodes where the theory predicts no re-wiring, so alone they cannot show the measure
+  responds to anything.
+
+## Finding 6 — why Betti numbers and not persistence summaries
+
+Restored from v1 (`landscapes.py`, METHODS.md §2.5) and extended to the de-censored object.
+Almost every H₁ class here is **essential**: across all 42 crawls under both
+representations, **35 of 3430 H₁ classes have finite persistence (1.0%)**, never more than
+two on a crawl against 40–58 essential ones; on the daily survivor series the rate is
+**exactly zero over 579 days**. Under the discard-infinite convention (gudhi default, and
+the Gidea–Katz pipeline) the H₁ landscape is identically zero or near enough; truncating
+infinite bars makes norms non-zero but they track the arbitrary cutoff, and event vs
+placebo stay indistinguishable (L² 1.22 vs 1.25). H₀ is the control and works fine. The
+cause is structural: a loop closes only if some pool contains all its tokens, which weaker
+pools entering later do not do. **The return-space TDA toolkit does not transfer to
+structural liquidity complexes.**
+
 ## Honesty log (corrections to my own earlier reads)
 - **Over-attribution, now fixed:** the previous commit called the RQ1 majority→minority
   flip a *survivorship* artifact. The 2×2 shows **LP-token representation is the larger
