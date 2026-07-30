@@ -26,9 +26,8 @@ import decensor as D
 import figstyle as F
 
 DEPEG = datetime.date(2023, 3, 11)
-DETECT = 5          # 95th pct of routine |delta|, gap-matched (event_test.py)
-DEPEG_TVL_LOST = 0.8   # % of universe TVL held by pools that delisted across the depeg
-DEPEG_DELTA = 1        # observed |delta| in essential B1 across the depeg window
+# The depeg event window, used to locate the observed event on the injection curve.
+DEPEG_PRE, DEPEG_POST = datetime.date(2023, 3, 7), datetime.date(2023, 3, 16)
 CURVE = datetime.date(2023, 7, 30)
 
 
@@ -46,6 +45,28 @@ def load_uni(fn):
 
 def tvl_map(fn):
     return {p["pool"]: (p.get("tvlUsd") or 0) for p in load_uni(fn)}
+
+
+def event_stats(path="event_test.json"):
+    """(detection threshold, observed |delta|) for essential B1 under lp_vertex, read from
+    event_test.py's output rather than restated here. A figure annotation that disagrees
+    with the table it illustrates is how a stale number survives a rewrite."""
+    with open(path) as fh:
+        rows = json.load(fh)
+    r = next(x for x in rows if x["observable"] == "essB1"
+             and x["representation"] == "lp_vertex" and x["event"].startswith("USDC"))
+    return r["detect95_matched"], r["delta"]
+
+
+def depeg_delisting(M):
+    """Pools present before the depeg and gone after it, and the share of pre-event universe
+    TVL they held. Derived from the crawls so the annotation tracks the archive: if a new
+    snapshot is discovered, the star moves with the data instead of lying about it."""
+    pre, post = load_uni(M[DEPEG_PRE]), load_uni(M[DEPEG_POST])
+    tvl_pre = {p["pool"]: (p.get("tvlUsd") or 0) for p in pre}
+    gone = set(tvl_pre) - {p["pool"] for p in post}
+    total = sum(tvl_pre.values())
+    return len(gone), 100 * sum(tvl_pre[p] for p in gone) / total if total else 0.0
 
 
 # ============================================================ figure 1
@@ -183,12 +204,12 @@ def main():
     M = snap_index()
     fig_representation(M)
     fig_curve_artifact(M)
-    fig_injection()
+    fig_injection(M)
 
 
 
 # ============================================================ figure 4
-def fig_injection(path="injection.json"):
+def fig_injection(M, path="injection.json"):
     """Dose-response of essential B1 to synthetic damage, from injection.py.
 
     The point of the panel is the distance between the detection threshold and where the
@@ -206,6 +227,9 @@ def fig_injection(path="injection.json"):
     ry = [x["delta_mean"] for x in r["share_random"]]
     rs = [x["delta_sd"] for x in r["share_random"]]
 
+    detect, depeg_delta = event_stats()
+    n_gone, depeg_tvl_lost = depeg_delisting(M)
+
     fig, ax = plt.subplots(figsize=(F.FULLWIDTH, 3.0))
     ax.fill_between(rx, [a - b for a, b in zip(ry, rs)], [a + b for a, b in zip(ry, rs)],
                     color=F.BLUE, alpha=.13, lw=0)
@@ -213,14 +237,15 @@ def fig_injection(path="injection.json"):
             label="diffuse damage (random pools, same TVL share)")
     ax.plot(tx, ty, "s-", color=F.DARKRED,
             label="targeted damage (largest pools first)")
-    ax.axhline(DETECT, color=F.GREY, ls=(0, (5, 3)), lw=1.0)
+    ax.axhline(detect, color=F.GREY, ls=(0, (5, 3)), lw=1.0)
     # the two annotations sit far apart on purpose: the threshold label goes right, where
     # only the flat targeted curve is, and the event label goes left above the star.
     ax.annotate("detection threshold (95th pct of routine drift)",
-                xy=(37, DETECT + 0.7), fontsize=7.4, color=F.GREY, va="bottom")
-    ax.plot([DEPEG_TVL_LOST], [DEPEG_DELTA], "*", color=F.PURPLE, ms=12, zorder=5)
-    ax.annotate("USDC depeg as observed:\n15 pools delisted, 0.8% of TVL",
-                xy=(DEPEG_TVL_LOST, DEPEG_DELTA + 0.4), xytext=(2.5, 13),
+                xy=(37, detect + 0.7), fontsize=7.4, color=F.GREY, va="bottom")
+    ax.plot([depeg_tvl_lost], [depeg_delta], "*", color=F.PURPLE, ms=12, zorder=5)
+    ax.annotate(f"USDC depeg as observed:\n{n_gone} pools delisted, "
+                f"{depeg_tvl_lost:.1f}% of TVL",
+                xy=(depeg_tvl_lost, depeg_delta + 0.4), xytext=(2.5, 13),
                 fontsize=7.4, color=F.PURPLE, va="bottom", ha="left",
                 arrowprops=dict(arrowstyle="-", color=F.PURPLE, lw=0.8,
                                 shrinkA=2, shrinkB=4))
@@ -232,8 +257,9 @@ def fig_injection(path="injection.json"):
     F.grid(ax)
     fig.savefig("figs/injection.png")
     plt.close(fig)
-    print(f"wrote figs/injection.png  (threshold {DETECT}; diffuse crosses it at "
-          f"{next((x for x, y in zip(rx, ry) if y >= DETECT), None):.0f}% of TVL)")
+    print(f"wrote figs/injection.png  (threshold {detect} from event_test.json; diffuse "
+          f"crosses it at {next((x for x, y in zip(rx, ry) if y >= detect), None):.0f}% of "
+          f"TVL; depeg {n_gone} pools / {depeg_tvl_lost:.1f}% of TVL, |delta|={depeg_delta})")
 
 if __name__ == "__main__":
     main()

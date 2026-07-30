@@ -43,7 +43,8 @@ docs in order and the arc is clear.
 ## Quickstart
 
 ```bash
-pip install --break-system-packages gudhi matplotlib numpy
+python -m venv venv && source venv/bin/activate   # do not use --break-system-packages
+pip install -r requirements.txt
 python -m pytest tests/test_toy.py -q            # 8/8 topology assertions
 
 # v2 (de-censored) — the current paper

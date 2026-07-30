@@ -22,7 +22,7 @@ Extensions over the MVP:
 Inference (placebo-window permutation, block bootstrap) is in `inference.py`;
 threshold/window robustness sweeps are in `robustness.py`.
 
-Deps: pip install --break-system-packages gudhi matplotlib
+Deps: python -m venv venv && source venv/bin/activate; pip install -r requirements.txt
 Run  : python pipeline.py --event 2023-03-11 --placebo 2022-08-15 --lp resolved --tag usdc
 """
 import argparse, datetime, itertools, json, math, os, statistics as S, time, urllib.request
@@ -73,6 +73,30 @@ def universe():
     return [{"pool": p["pool"], "toks": tokens(p), "sym": p["symbol"], "proj": p["project"]} for p in uni]
 
 
+def write_json_atomic(path, obj):
+    """Write JSON via a temp file + os.replace, which is atomic on POSIX.
+
+    The cache is keyed on os.path.exists(), so a half-written file is worse than no file:
+    it is trusted forever and json.load raises on every later run until someone deletes it
+    by hand. That is reachable here -- these fetches run in ephemeral containers and get
+    interrupted. Writing to <path>.tmp and renaming means a crash leaves either the old
+    file or no file, never a truncated one."""
+    tmp = f"{path}.tmp"
+    with open(tmp, "w") as fh:
+        json.dump(obj, fh)
+    os.replace(tmp, path)
+
+
+def read_json_cache(path):
+    """Load a cache file, treating a corrupted one as absent so it gets re-fetched rather
+    than raising on every subsequent run."""
+    try:
+        with open(path) as fh:
+            return json.load(fh)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
 def fetch_charts(uni, workers=6, rounds=8):
     os.makedirs(CHART_DIR, exist_ok=True)
 
@@ -82,7 +106,7 @@ def fetch_charts(uni, workers=6, rounds=8):
             return
         try:
             d = _get(f"https://yields.llama.fi/chart/{u['pool']}")["data"]
-            json.dump([(c["timestamp"][:10], c.get("tvlUsd") or 0) for c in d], open(fn, "w"))
+            write_json_atomic(fn, [(c["timestamp"][:10], c.get("tvlUsd") or 0) for c in d])
         except Exception:
             pass
 

@@ -91,7 +91,10 @@ def fetch_registry(timestamp, retries=3):
     os.makedirs(ARCHIVE_DIR, exist_ok=True)
     fn = os.path.join(ARCHIVE_DIR, f"{timestamp}.json")
     if os.path.exists(fn):
-        return json.load(open(fn))
+        cached = P.read_json_cache(fn)
+        if cached is not None:
+            return cached
+        print(f"  cached snapshot {timestamp} is corrupt; re-fetching")
     url = f"https://web.archive.org/web/{timestamp}id_/https://yields.llama.fi/pools"
     for r in range(retries):
         try:
@@ -99,7 +102,7 @@ def fetch_registry(timestamp, retries=3):
             if raw[:2] == b"\x1f\x8b":
                 raw = gzip.decompress(raw)
             data = json.loads(raw)["data"]
-            json.dump(data, open(fn, "w"))
+            P.write_json_atomic(fn, data)
             return data
         except Exception:
             time.sleep(3 * (r + 1))

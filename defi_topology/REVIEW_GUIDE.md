@@ -12,7 +12,8 @@ Read `DECENSORING.md` first for the v2 findings.
 
 Setup (both paths, no auth):
 ```bash
-pip install --break-system-packages gudhi matplotlib numpy
+python -m venv venv && source venv/bin/activate   # do not use --break-system-packages
+pip install -r requirements.txt
 python -m pytest tests/test_toy.py -q     # or: python tests/test_toy.py
 ```
 

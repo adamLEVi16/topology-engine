@@ -1,0 +1,12 @@
+# Pinned to the versions the published numbers were produced with. Everything else the
+# pipeline needs is in the standard library (urllib, json, gzip, statistics, itertools).
+#
+#   python -m venv venv && source venv/bin/activate
+#   pip install -r requirements.txt
+#
+# Do NOT install these with `pip install --break-system-packages`. That flag exists to
+# override PEP 668, which distributions added precisely to stop pip from writing into a
+# package-manager-owned site-packages. A venv costs one line and cannot break the host.
+gudhi==3.13.0
+matplotlib==3.11.1
+numpy>=1.24

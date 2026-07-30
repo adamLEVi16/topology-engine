@@ -12,7 +12,15 @@ Reuses the cached charts, so run _fetch.py (or pipeline.py once) first.
 CLI:
   python robustness.py --event 2023-03-11 --placebo 2022-08-15
 """
-import argparse, datetime, itertools, statistics as S
+import argparse, datetime, itertools, math, statistics as S
+
+
+def _mean(vals):
+    """Mean, or NaN on an empty window. pipeline.window() legitimately returns [] when a
+    window falls outside chart coverage or every day is dropped by the coverage guard, and
+    statistics.mean([]) raises. NaN rather than 0.0: an empty window is missing data, not a
+    measurement of zero, and 0.0 in a results table reads as a real value."""
+    return S.mean(vals) if vals else math.nan
 
 import pipeline as P
 
@@ -34,12 +42,12 @@ def sweep(event_date, placebo_date=None,
                "dropped": len(edrop)}
         for m in metrics:
             vals = [r[m] for r in e]
-            rec[f"ev_{m}"] = (S.mean(vals), S.pstdev(vals) if len(vals) > 1 else 0)
+            rec[f"ev_{m}"] = (_mean(vals), S.pstdev(vals) if len(vals) > 1 else 0)
         if pb:
             b, _ = P.window(pb, charts, tok, half, ms, lp)
             for m in metrics:
                 vals = [r[m] for r in b]
-                rec[f"pb_{m}"] = (S.mean(vals), S.pstdev(vals) if len(vals) > 1 else 0)
+                rec[f"pb_{m}"] = (_mean(vals), S.pstdev(vals) if len(vals) > 1 else 0)
         rows.append(rec)
     return rows, metrics
 

@@ -9,7 +9,8 @@ Everything here is reproduced from the free DeFiLlama API (602-pool Ethereum sta
 universe) and the cached charts. All commands below run from `defi_topology/`.
 
 ```bash
-pip install --break-system-packages gudhi matplotlib
+python -m venv venv && source venv/bin/activate   # do not use --break-system-packages
+pip install -r requirements.txt
 python _fetch.py                                   # warm the chart cache (~600 pools, once)
 python -m pytest tests/test_toy.py -q              # topology correctness on hand-checked complexes
 python pipeline.py --event 2023-03-11 --placebo 2023-06-15 --lp resolved --tag usdc_resolved

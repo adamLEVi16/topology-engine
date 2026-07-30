@@ -2,6 +2,8 @@
 """Standalone cache warmer: registry + per-pool TVL history -> defi_topology/charts/.
 Run once; the hardened pipeline reuses the cache. Safe to re-run (skips cached)."""
 import json, os, time, urllib.request
+
+from pipeline import write_json_atomic
 from concurrent.futures import ThreadPoolExecutor
 
 ZERO = "0x0000000000000000000000000000000000000000"
@@ -23,7 +25,7 @@ def universe():
 def main():
     os.makedirs(CHART_DIR, exist_ok=True)
     uni = universe()
-    json.dump(uni, open(os.path.join(CHART_DIR, "universe.json"), "w"))
+    write_json_atomic(os.path.join(CHART_DIR, "universe.json"), uni)
     print(f"universe: {len(uni)} pools", flush=True)
 
     def one(u):
@@ -32,7 +34,7 @@ def main():
             return None
         try:
             d = _get(f"https://yields.llama.fi/chart/{u['pool']}")["data"]
-            json.dump([(c["timestamp"][:10], c.get("tvlUsd") or 0) for c in d], open(fn, "w"))
+            write_json_atomic(fn, [(c["timestamp"][:10], c.get("tvlUsd") or 0) for c in d])
             return None
         except Exception as e:
             return f"{u['pool']}: {type(e).__name__}: {e}"

@@ -23,8 +23,12 @@ Import for side effects, then use the palette:
     ax.plot(x, y, color=F.BLUE)
 """
 import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+# NB: importing this module must not change matplotlib's global state. Selecting the Agg
+# backend at import time would silently break plt.show() for anyone who imports these
+# modules into a notebook to poke at the data. apply() switches the backend, and only
+# because the figure scripts want it; pass headless=False to leave it alone.
 
 # --- Paul Tol's "bright" qualitative scheme: distinguishable in colour, in greyscale,
 #     and under the common forms of colour-vision deficiency.
@@ -42,7 +46,12 @@ FULLWIDTH = 7.0
 COLWIDTH = 3.35
 
 
-def apply():
+def apply(headless=True):
+    """Install the journal figure style. headless=True also switches to Agg, which is what
+    the figure scripts want; call apply(headless=False) from a notebook to keep whatever
+    interactive backend is already in use."""
+    if headless:
+        matplotlib.use("Agg")
     plt.rcParams.update({
         "figure.dpi": 160,
         "savefig.dpi": 400,             # print-quality raster

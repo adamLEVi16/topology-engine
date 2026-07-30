@@ -18,7 +18,8 @@ Data: DeFiLlama, free, no auth.
     registry : https://yields.llama.fi/pools
     history  : https://yields.llama.fi/chart/{pool}   (daily TVL, back to ~Feb 2022)
 
-Deps: pip install --break-system-packages gudhi matplotlib
+Deps: see requirements.txt (use a venv). FROZEN FILE -- pre-hardening
+MVP kept only as a diff baseline against pipeline.py; do not run or patch it.
 Run  : python defi_topology_pipeline.py --event 2023-03-11 --control 2023-01-11
        python defi_topology_pipeline.py --event 2022-05-10 --control 2022-03-10   # Terra
 """

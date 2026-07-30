@@ -131,7 +131,11 @@ def build_range(charts, tok, start, end, check_every=90):
 
 
 def _summ(rows, k):
+    """Mean and sd of column k. Returns NaN for the mean on an empty row set rather than
+    raising StatisticsError or reporting 0.0, which would look like a measurement."""
     vals = [r[k] for r in rows]
+    if not vals:
+        return math.nan, 0.0
     return S.mean(vals), (S.pstdev(vals) if len(vals) > 1 else 0.0)
 
 
