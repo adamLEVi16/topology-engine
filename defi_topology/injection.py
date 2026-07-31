@@ -19,9 +19,10 @@ answer different questions:
   RANDOM     delete a random pool set totalling X% of   -- the same drawdown spread
              TVL, averaged over seeds                      diffusely rather than aimed
 
-The detection thresholds come from event_test.py: the smallest |delta| clearing the 95th
-percentile of routine drift, measured against gap-matched intervals (5 loops) and against
-all intervals (8 loops) for essential B1 under lp_vertex.
+The detection thresholds come from event_test.py: the largest routine change observed
+across gap-matched intervals (5 loops) and across all intervals (8 loops) for essential B1
+under lp_vertex. At n=15 gap-matched pairs a 95th percentile resolves to the maximum, so
+that is what the number is and what it should be called.
 
 Run:  python injection.py
       python injection.py --date 2023-03-07 --json injection.json

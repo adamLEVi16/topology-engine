@@ -240,7 +240,7 @@ def fig_injection(M, path="injection.json"):
     ax.axhline(detect, color=F.GREY, ls=(0, (5, 3)), lw=1.0)
     # the two annotations sit far apart on purpose: the threshold label goes right, where
     # only the flat targeted curve is, and the event label goes left above the star.
-    ax.annotate("detection threshold (95th pct of routine drift)",
+    ax.annotate("detection threshold (largest routine change observed)",
                 xy=(37, detect + 0.7), fontsize=7.4, color=F.GREY, va="bottom")
     ax.plot([depeg_tvl_lost], [depeg_delta], "*", color=F.PURPLE, ms=12, zorder=5)
     ax.annotate(f"USDC depeg as observed:\n{n_gone} pools delisted, "

@@ -20,7 +20,7 @@ vs 63–178 pools; true survivorship 24–41%, itself well above the paper's 12.
 bound*). At the depeg, 208 of 274 pools were invisible — 35% of universe TVL (FRAX-3CRV
 \$474M, MIM/OUSD/TUSD/LUSD-3CRV, …).
 
-## Finding 2 — the higher-order *fraction* has no convention-free value
+## Finding 2 — the higher-order *fraction* has no representation-invariant value
 The paper reports *a majority (52–77%) of loops are higher-order, declining over 2022–23*.
 That number is fragile to **two** defensible modeling choices that together swing it from
 **0.31 to 0.93**. HOfrac [essB₁] by snapshot × representation × sample:
@@ -49,14 +49,14 @@ That number is fragile to **two** defensible modeling choices that together swin
   declines under both, corr(survivor HOfrac, survivorship%) ≈ −0.92 for lp_vertex — the
   survivor sample converging to the full-universe value as survivorship rises.)
 
-**Honest RQ1 result: a sensitivity range, not a point.** The paper's "majority, declining"
+**RQ1 result: the estimand is a sensitivity range, not a point.** The paper's "majority, declining"
 sits at the high-inflation corner (resolved + survivor); the de-censored, composability-
 preserving corner is a flat minority (~0.35). Neither convention is uniquely correct
 (resolving = economic exposure to base assets; lp_vertex = composability structure). The
 headline number is an artifact of two arbitrary choices — a stronger, and more precisely
 decomposed, cautionary finding than survivorship alone.
 
-## Finding 3 — the null is the robust part (confirmed across conventions)
+## Finding 3 — structural stability across the depeg (confirmed across conventions)
 De-censored event test at weekly resolution (Feb–Apr 2023, full universe): the pre→post
 depeg change (2023-03-07 → 03-16) is *smaller than typical between-snapshot variation* for
 every observable, under **both** representations —
@@ -70,12 +70,12 @@ every observable, under **both** representations —
 
 So the structural change across the largest stablecoin depeg on record is *less* than the
 routine month-to-month drift, on the full de-censored universe, under both LP conventions.
-**Unlike the descriptive fraction (Finding 2), the null is robust to every modeling choice
+**Unlike the descriptive fraction (Finding 2), the result holds under every modeling choice
 we can vary** — survivorship, LP representation, and cadence. This is the paper's one
 convention-independent structural result, and it directly refutes the reviewers' "it only
 looks rigid because you see survivors."
 
-## Finding 4 — the null holds on a second event (N=2), after catching a data trap
+## Finding 4 — the same result on a second event (N=2), after catching a data trap
 Testing the de-censored complex against the **Curve/Vyper exploit (2023-07-30)** first
 appeared to show a *signal*: essential $B_1$ jumped 47→55 (90th percentile of
 between-snapshot changes) under lp\_vertex, and similarly under resolved. It is an
@@ -95,7 +95,7 @@ between-snapshot changes) under lp\_vertex, and similarly under resolved. It is 
 3. `repair_transient_dips` (interpolate the glitched pools from neighbours) **removes the
    signal entirely**: essential $B_1$ returns to 48 ($\approx$ the 47 pre-event value).
 
-So the Curve window is **inert**, and the de-censored null now holds on **N = 2 events**
+So the Curve window is **stable**, and the de-censored result now holds on **N = 2 events**
 (USDC depeg + Curve exploit), each confirmed only after snapshot-level data QC. This adds
 a second methodological trap to the paper alongside survivorship: **archived registry
 snapshots crawled during acute events can carry corrupted TVL, manufacturing spurious
@@ -111,7 +111,7 @@ depeg placebo percentile by 0.0 (54.5th, $p=0.91$), because their essB₁ was al
 unremarkable; the guard is for consistency and future-proofing, not because it moved a
 number.
 
-## Finding 5 — the null is now *bounded*, and the event test was tilted toward it
+## Finding 5 — the stability claim is now *bounded*, and the event test was tilted
 
 Two problems with the event test as originally run, both found by re-checking rather than
 by review:
@@ -137,8 +137,7 @@ from an arbitrary window of the same length, rather than unusually quiet.
 | essential B₁ | resolved | 0 | 0 | 27th | 4 |
 | gap | resolved | 1 | 1 | 50th | 11 |
 
-**The injection test (`injection.py`) converts the null from an absence of evidence into a
-bound.** Damaging a real snapshot synthetically:
+**The injection test (`injection.py`) turns the stability claim into a bounded one.** Damaging a real snapshot synthetically:
 
 - **The measure responds to pool count, not to value.** Deleting the 8 largest pools takes
   54% of universe TVL and moves essential B₁ by 3 (under threshold); deleting a random
@@ -167,24 +166,13 @@ cause is structural: a loop closes only if some pool contains all its tokens, wh
 pools entering later do not do. **The return-space TDA toolkit does not transfer to
 structural liquidity complexes.**
 
-## Honesty log (corrections to my own earlier reads)
-- **Over-attribution, now fixed:** the previous commit called the RQ1 majority→minority
+## Superseded readings
+- **Over-attribution, corrected:** the previous commit called the RQ1 majority→minority
   flip a *survivorship* artifact. The 2×2 shows **LP-token representation is the larger
   driver**; survivorship is secondary. Corrected above.
 - The 4-snapshot peek suggested a late-2023 *erosion* under lp_vertex. The full series
   shows lp_vertex is **flat** (no erosion); the genuine decline lives in the *resolved*
   representation. Clarified.
-
-## What this does to the paper (v2)
-- **New centerpiece + method:** web-archive de-censoring of DeFi registry survivorship,
-  and — via the archive's native LP-as-vertex representation — the first empirical run of
-  the LP-resolution fork.
-- **RQ1 reframed:** from "a majority, declining" to "no convention-free value; swings
-  0.31–0.93 across survivorship × representation." A sensitivity result, with the two
-  drivers decomposed.
-- **Null strengthened and elevated to the paper's one robust structural claim:** inert
-  through the depeg across sample and (task 9) representation.
-- **Unchanged headline:** still not "topology predicts crashes."
 
 Reproduce: `python decensor.py --build ...` then the 2×2 sweep over `archive/`
 (`observables(..., resolve=True/False)`).
