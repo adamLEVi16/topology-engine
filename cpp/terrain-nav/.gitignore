@@ -1,0 +1,5 @@
+build/
+*.ppm
+*.png
+*.csv
+*.hgt
