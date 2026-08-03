@@ -361,6 +361,84 @@ Gradient inflation is therefore useful over a **middle band** of map quality —
 degraded enough that slope-correlated error matters, accurate enough that the
 slope estimate is still meaningful.
 
+## Does the map have to be a grid?
+
+A grid stores samples and interpolates between them. A small neural network can
+instead store terrain as a continuous function — differentiable everywhere by the
+chain rule rather than only within a cell. Since the filter now asks the map for
+gradients, that sounded like it should matter.
+
+`tools/train_siren.py` fits a SIREN (sinusoidal coordinate network, Sitzmann et
+al. 2020) to a terrain grid in pure NumPy with hand-written backprop, and exports
+weights that `NeuralMap` reads. Gradients come from forward-mode differentiation
+through the network, which agrees with central differences to seven decimals.
+
+Both representations sit behind one `TerrainMap` interface — `elevation(x, y)`
+and `gradient(x, y)` — so they are drop-in alternatives comparable at equal bytes.
+
+### The baseline has to be bicubic
+
+The tempting framing is "grids are stair-stepped, neural fields are smooth." That
+is false, and believing it would have produced a flattering, meaningless result.
+Bilinear interpolation is C0 and its gradient jumps at every cell boundary, but
+**bicubic (Catmull-Rom) interpolation is C1 and gives smooth analytic gradients
+from exactly the same stored bytes.** That, not bilinear, is the honest baseline.
+
+### Measured at equal storage
+
+Truth is an 800×800 grid at 30 m (2 500 KiB) over ridged terrain with a 42° mean
+slope. Navigation figures are medians over 8 seeds with the marginalised filter.
+
+| Representation | Store | Elev RMSE | Nav median | Nav worst | Query |
+|---|---|---|---|---|---|
+| grid 8×, bilinear | 39 KiB | 41.0 m | 72.5 m | 770.8 m | 42 ns |
+| grid 8×, bicubic | 39 KiB | 34.5 m | **62.4 m** | **89.2 m** | 96 ns |
+| SIREN 64×3 | 34 KiB | **26.4 m** | 102.2 m | 122.7 m | 30 458 ns |
+| grid 16×, bilinear | 10 KiB | 78.3 m | 177.7 m | 427.4 m | 37 ns |
+| grid 16×, bicubic | 10 KiB | 67.1 m | **152.2 m** | 3 986 m | 94 ns |
+| SIREN 48×2 | 10 KiB | **49.9 m** | 1 334 m | 8 182 m | 11 333 ns |
+| exact grid | 2 500 KiB | 0.0 m | 10.2 m | 21.3 m | 41 ns |
+
+### Finding 4: better reconstruction, worse navigation
+
+The neural map wins on every map-fidelity measure and loses on the only one that
+counts:
+
+- Elevation RMSE: **26.4 m vs 34.5 m** at budget A, **49.9 m vs 67.1 m** at budget B
+- Fine relief retained: **73 % vs 63 %** — it is *not* over-smoothed
+- Gradient RMSE: **0.759 vs 0.799**
+- Error spatial correlation length: **78 m vs 109 m** — its error is *less* coherent
+- Static profile matching against the map localises correctly, as well as the grid
+
+And yet navigation is 1.6× worse at budget A and 9× worse at budget B, at ~300×
+the query cost. Three plausible explanations were tested and rejected: it is not
+over-smoothing, not a long-range coherent warp, and not a loss of map information
+(a static rigid-translation profile search finds the right position with either
+map). Inspecting a run directly shows the filter holding a *confident* fix — 30 m
+posterior spread — on a position wrong by ~100 m, while its inertial bias estimate
+diverges to 4.5 m/s against a true value of 1.2 m/s and a prior of 3.0 m/s.
+
+The working explanation is coupling rather than accuracy: a map whose error varies
+with position produces an apparent position offset that changes as the vehicle
+moves, the filter attributes that changing offset to vehicle motion, and it lands
+in the bias estimate — which then corrupts the prediction step. Reconstruction
+error and navigation error are simply not the same quantity, and MSE training
+optimises the wrong one.
+
+### Finding 5: the cheap idea won
+
+Switching interpolation from bilinear to bicubic — no training, no extra bytes,
+about 50 ns more per query — cut median error from 72.5 m to 62.4 m and the worst
+case from **771 m to 89 m**. That 8.6× reduction in tail risk is the largest
+single improvement in the table, and it came from reading bytes that were already
+there more carefully.
+
+The neural result is a genuine negative result, and worth having: at these budgets
+an implicit neural terrain map is *not* the win it looks like on reconstruction
+metrics. Note also that the stated motivation — memory-constrained micro-drones —
+is exactly where a 300× compute penalty is least affordable, since such platforms
+are compute-constrained too.
+
 ## Where this would go next
 
 - **A real correlation stage.** Classic TERCOM correlates a whole batch of

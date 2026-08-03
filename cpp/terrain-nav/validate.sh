@@ -169,6 +169,51 @@ ok=$(awk -v a="$clean_off" -v b="$clean_on" 'BEGIN{print (b < a * 2.5) ? 1 : 0}'
 [[ "$ok" == 1 ]] && pass "exact map: ${clean_off} m without, ${clean_on} m with" \
                  || fail "exact map: inflation degraded a perfect map (${clean_off} -> ${clean_on})"
 
+echo "16. bicubic must reconstruct better than bilinear from the same bytes"
+BASE="--dem-size 800 --dem-spacing 30 --relief 2500 --terrain ridged"
+lin=$("$BIN" $BASE --map-downsample 8 --map-interp bilinear --map-rmse | awk '/elevation RMSE/{print $3}')
+cub=$("$BIN" $BASE --map-downsample 8 --map-interp bicubic  --map-rmse | awk '/elevation RMSE/{print $3}')
+ok=$(awk -v a="$lin" -v b="$cub" 'BEGIN{print (b < a) ? 1 : 0}')
+[[ "$ok" == 1 ]] && pass "8x grid: bilinear ${lin} m, bicubic ${cub} m" \
+                 || fail "8x grid: bilinear ${lin} m, bicubic ${cub} m"
+
+echo "17. analytic gradients must match central differences"
+for cfg in "--map-interp bilinear" "--map-interp bicubic"; do
+    d=$("$BIN" $BASE --map-downsample 8 $cfg --probe 7000,7000 \
+        | awk '/delta/{gsub(/[(),]/,""); print ($2<0?-$2:$2)+($3<0?-$3:$3)}')
+    ok=$(awk -v d="$d" 'BEGIN{print (d < 1e-4) ? 1 : 0}')
+    [[ "$ok" == 1 ]] && pass "${cfg#--map-interp } gradient matches to ${d}" \
+                     || fail "${cfg#--map-interp } gradient off by ${d}"
+done
+
+echo "18. bicubic must reduce navigation tail risk on a degraded map"
+worst() {
+    local out=""
+    for s in 1 2 3 4 5 6 7 8; do
+        out="$out $("$BIN" $BASE --map-downsample 8 --map-interp "$1" --filter rbpf \
+                    --gradient-inflation --duration 160 --start 1500,1500 --seed $s --quiet \
+                    | awk '/terrain-aided final error/{print $4}')"
+    done
+    echo "$out" | tr ' ' '\n' | grep -v '^$' | sort -n | tail -1
+}
+wl=$(worst bilinear); wc=$(worst bicubic)
+ok=$(awk -v a="$wl" -v b="$wc" 'BEGIN{print (b < a) ? 1 : 0}')
+[[ "$ok" == 1 ]] && pass "worst case ${wl} m bilinear vs ${wc} m bicubic" \
+                 || fail "worst case ${wl} m bilinear vs ${wc} m bicubic"
+
+# The neural checks only run when a trained network is present, since training
+# is a separate offline step and the repo does not ship weights.
+if [[ -n "${SIREN:-}" && -f "${SIREN:-}" ]]; then
+    echo "19. neural map gradients must match central differences"
+    d=$("$BIN" $BASE --neural "$SIREN" --probe 7000,7000 \
+        | awk '/delta/{gsub(/[(),]/,""); print ($2<0?-$2:$2)+($3<0?-$3:$3)}')
+    ok=$(awk -v d="$d" 'BEGIN{print (d < 1e-4) ? 1 : 0}')
+    [[ "$ok" == 1 ]] && pass "SIREN forward-mode gradient matches to ${d}" \
+                     || fail "SIREN gradient off by ${d}"
+else
+    echo "19. neural map checks skipped (set SIREN=path/to/map.siren to enable)"
+fi
+
 echo
 if [[ $fails -eq 0 ]]; then echo "all checks passed"; else echo "$fails check(s) failed"; fi
 exit $fails

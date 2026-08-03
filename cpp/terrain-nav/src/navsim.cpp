@@ -17,7 +17,7 @@ double distance(double ax, double ay, double bx, double by) {
 }
 }  // namespace
 
-NavSim::NavSim(const Dem& truth_dem, const Dem& map_dem,
+NavSim::NavSim(const Dem& truth_dem, const TerrainMap& map_dem,
                const ScenarioConfig& scenario, const PfConfig& pf)
     : truth_dem_(truth_dem), map_dem_(map_dem), scenario_(scenario), pf_config_(pf),
       filter_(pf, map_dem, scenario.seed ^ 0x9e3779b97f4a7c15ull) {

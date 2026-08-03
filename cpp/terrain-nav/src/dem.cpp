@@ -192,7 +192,7 @@ bool Dem::in_bounds(double x, double y) const {
     return x >= 0.0 && y >= 0.0 && x <= extent_x() && y <= extent_y();
 }
 
-double Dem::elevation(double x, double y) const {
+double Dem::elevation_bilinear(double x, double y) const {
     double gx = x / spacing_;
     double gy = y / spacing_;
     gx = std::min(std::max(gx, 0.0), static_cast<double>(w_ - 1));
@@ -218,7 +218,7 @@ double Dem::elevation(double x, double y) const {
     return top + (bot - top) * fy;
 }
 
-Vec2 Dem::gradient(double x, double y) const {
+Vec2 Dem::gradient_bilinear(double x, double y) const {
     double gx = x / spacing_;
     double gy = y / spacing_;
     gx = std::min(std::max(gx, 0.0), static_cast<double>(w_ - 1));
@@ -312,4 +312,110 @@ Dem Dem::downsample(int factor) const {
     }
     out.recompute_bounds();
     return out;
+}
+
+namespace {
+
+// Catmull-Rom basis and its derivative. C1 continuous, interpolating, and it
+// needs no precomputed tangents — the standard choice for resampling a grid.
+inline void catmull_rom(double t, double w[4]) {
+    const double t2 = t * t;
+    const double t3 = t2 * t;
+    w[0] = -0.5 * t3 + t2 - 0.5 * t;
+    w[1] =  1.5 * t3 - 2.5 * t2 + 1.0;
+    w[2] = -1.5 * t3 + 2.0 * t2 + 0.5 * t;
+    w[3] =  0.5 * t3 - 0.5 * t2;
+}
+
+inline void catmull_rom_deriv(double t, double w[4]) {
+    const double t2 = t * t;
+    w[0] = -1.5 * t2 + 2.0 * t - 0.5;
+    w[1] =  4.5 * t2 - 5.0 * t;
+    w[2] = -4.5 * t2 + 4.0 * t + 0.5;
+    w[3] =  1.5 * t2 - 1.0 * t;
+}
+
+}  // namespace
+
+// Gathers the 4x4 neighbourhood and the cell-local coordinates for a query.
+void Dem::bicubic_patch(double x, double y, double patch[4][4],
+                        double& fx, double& fy) const {
+    double gx = x / spacing_;
+    double gy = y / spacing_;
+    gx = std::min(std::max(gx, 0.0), static_cast<double>(w_ - 1));
+    gy = std::min(std::max(gy, 0.0), static_cast<double>(h_ - 1));
+
+    int i = static_cast<int>(gx);
+    int j = static_cast<int>(gy);
+    if (i >= w_ - 1) i = w_ - 2;
+    if (j >= h_ - 1) j = h_ - 2;
+    if (i < 0) i = 0;
+    if (j < 0) j = 0;
+
+    fx = gx - i;
+    fy = gy - j;
+
+    for (int dj = 0; dj < 4; ++dj) {
+        const int sj = std::min(std::max(j - 1 + dj, 0), h_ - 1);
+        for (int di = 0; di < 4; ++di) {
+            const int si = std::min(std::max(i - 1 + di, 0), w_ - 1);
+            patch[dj][di] = at(si, sj);
+        }
+    }
+}
+
+double Dem::elevation_bicubic(double x, double y) const {
+    double patch[4][4], fx, fy;
+    bicubic_patch(x, y, patch, fx, fy);
+
+    double wx[4], wy[4];
+    catmull_rom(fx, wx);
+    catmull_rom(fy, wy);
+
+    double sum = 0.0;
+    for (int dj = 0; dj < 4; ++dj) {
+        double row = 0.0;
+        for (int di = 0; di < 4; ++di) row += wx[di] * patch[dj][di];
+        sum += wy[dj] * row;
+    }
+    return sum;
+}
+
+Vec2 Dem::gradient_bicubic(double x, double y) const {
+    double patch[4][4], fx, fy;
+    bicubic_patch(x, y, patch, fx, fy);
+
+    double wx[4], wy[4], dwx[4], dwy[4];
+    catmull_rom(fx, wx);
+    catmull_rom(fy, wy);
+    catmull_rom_deriv(fx, dwx);
+    catmull_rom_deriv(fy, dwy);
+
+    double dz_dfx = 0.0;
+    double dz_dfy = 0.0;
+    for (int dj = 0; dj < 4; ++dj) {
+        double row = 0.0;
+        double drow = 0.0;
+        for (int di = 0; di < 4; ++di) {
+            row += wx[di] * patch[dj][di];
+            drow += dwx[di] * patch[dj][di];
+        }
+        dz_dfx += wy[dj] * drow;
+        dz_dfy += dwy[dj] * row;
+    }
+    return Vec2{dz_dfx / spacing_, dz_dfy / spacing_};
+}
+
+double Dem::elevation(double x, double y) const {
+    return (interp_ == Interp::Bicubic) ? elevation_bicubic(x, y) : elevation_bilinear(x, y);
+}
+
+Vec2 Dem::gradient(double x, double y) const {
+    return (interp_ == Interp::Bicubic) ? gradient_bicubic(x, y) : gradient_bilinear(x, y);
+}
+
+std::string Dem::describe() const {
+    return "grid " + std::to_string(w_) + "x" + std::to_string(h_) + " @ " +
+           std::to_string(static_cast<int>(spacing_)) + " m, " +
+           (interp_ == Interp::Bicubic ? "bicubic" : "bilinear");
 }

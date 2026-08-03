@@ -5,7 +5,7 @@
 #include <limits>
 #include <stdexcept>
 
-ParticleFilter::ParticleFilter(const PfConfig& config, const Dem& dem, std::uint64_t seed)
+ParticleFilter::ParticleFilter(const PfConfig& config, const TerrainMap& dem, std::uint64_t seed)
     : config_(config), dem_(dem), rng_(seed) {
     if (config_.count < 2) throw std::invalid_argument("particle count must be >= 2");
     if (config_.meas_sigma <= 0.0) throw std::invalid_argument("meas_sigma must be > 0");

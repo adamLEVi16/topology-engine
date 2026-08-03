@@ -4,7 +4,7 @@
 #include <random>
 #include <vector>
 
-#include "dem.hpp"
+#include "terrain_map.hpp"
 #include "linalg2.hpp"
 
 struct Particle {
@@ -62,7 +62,7 @@ struct PfConfig {
 // z = DEM(x, y) rules out a Kalman filter on the position states.
 class ParticleFilter {
 public:
-    ParticleFilter(const PfConfig& config, const Dem& dem, std::uint64_t seed);
+    ParticleFilter(const PfConfig& config, const TerrainMap& dem, std::uint64_t seed);
 
     void initialize(double x0, double y0);
 
@@ -93,7 +93,7 @@ private:
     Vec2 sample_gaussian(const Mat2& covariance);
 
     PfConfig config_;
-    const Dem& dem_;
+    const TerrainMap& dem_;
     std::vector<Particle> particles_;
     std::vector<Particle> scratch_;
     std::vector<double> lin_weights_;

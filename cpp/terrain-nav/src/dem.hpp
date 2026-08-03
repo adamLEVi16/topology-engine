@@ -5,14 +5,24 @@
 #include <vector>
 
 #include "linalg2.hpp"
+#include "terrain_map.hpp"
 
 // A digital elevation model: a regular grid of ground heights in metres.
 //
 // Coordinates are a local east-north-up frame, also in metres, with the origin
 // at grid node (0, 0). x runs east along columns, y runs north along rows, so
 // node (i, j) sits at (i * spacing, j * spacing).
-class Dem {
+class Dem : public TerrainMap {
 public:
+    // How to interpolate between samples. Bilinear is C0 — its gradient jumps
+    // across every cell boundary. Bicubic (Catmull-Rom) is C1, giving smooth
+    // gradients from the same stored bytes, which makes it the fair baseline
+    // for any continuous representation.
+    enum class Interp { Bilinear, Bicubic };
+
+    void set_interp(Interp mode) { interp_ = mode; }
+    Interp interp() const { return interp_; }
+
     // Procedurally generated terrain, so the whole thing runs with no downloads.
     //   "fractal" — fractional Brownian motion, rolling hills
     //   "ridged"  — sharper ridges and valleys, very informative for navigation
@@ -30,20 +40,20 @@ public:
     static Dem from_hgt(const std::string& path, double spacing_override = 0.0);
 
     // Bilinear interpolation. Queries outside the grid clamp to the edge.
-    double elevation(double x, double y) const;
-    bool in_bounds(double x, double y) const;
+    double elevation(double x, double y) const override;
+    bool in_bounds(double x, double y) const override;
 
     // Exact analytic gradient of the bilinear interpolant, in metres per metre.
     // Note this is only piecewise continuous: the bilinear surface is C0, so the
     // gradient jumps across cell boundaries. That is a property of the grid
     // representation itself, not of the differencing scheme.
-    Vec2 gradient(double x, double y) const;
+    Vec2 gradient(double x, double y) const override;
 
     int width() const { return w_; }
     int height() const { return h_; }
     double spacing() const { return spacing_; }
-    double extent_x() const { return (w_ - 1) * spacing_; }
-    double extent_y() const { return (h_ - 1) * spacing_; }
+    double extent_x() const override { return (w_ - 1) * spacing_; }
+    double extent_y() const override { return (h_ - 1) * spacing_; }
 
     double at(int i, int j) const { return z_[static_cast<std::size_t>(j) * w_ + i]; }
     double min_elevation() const { return min_z_; }
@@ -63,14 +73,21 @@ public:
     Dem downsample(int factor) const;
 
     // Bytes of elevation payload, for like-for-like storage comparisons.
-    std::size_t memory_bytes() const { return z_.size() * sizeof(float); }
+    std::size_t memory_bytes() const override { return z_.size() * sizeof(float); }
+    std::string describe() const override;
 
 private:
     void recompute_bounds();
+    double elevation_bilinear(double x, double y) const;
+    double elevation_bicubic(double x, double y) const;
+    Vec2 gradient_bilinear(double x, double y) const;
+    Vec2 gradient_bicubic(double x, double y) const;
+    void bicubic_patch(double x, double y, double patch[4][4], double& fx, double& fy) const;
 
     int w_ = 0;
     int h_ = 0;
     double spacing_ = 0.0;
+    Interp interp_ = Interp::Bilinear;
     double min_z_ = 0.0;
     double max_z_ = 0.0;
     std::vector<float> z_;

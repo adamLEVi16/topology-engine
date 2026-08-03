@@ -16,6 +16,7 @@ add_executable(terrain_nav
   src/main.cpp
   src/dem.cpp
   src/navsim.cpp
+  src/neural_map.cpp
   src/particle_filter.cpp
   src/render.cpp
 )

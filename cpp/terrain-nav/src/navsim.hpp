@@ -79,7 +79,7 @@ public:
     // truth_dem is the ground the vehicle actually flies over; map_dem is the
     // stored map the filter navigates against. They are the same object unless
     // the map is deliberately degraded.
-    NavSim(const Dem& truth_dem, const Dem& map_dem,
+    NavSim(const Dem& truth_dem, const TerrainMap& map_dem,
            const ScenarioConfig& scenario, const PfConfig& pf);
 
     RunSummary run(std::ostream* log);
@@ -90,7 +90,7 @@ public:
 
 private:
     const Dem& truth_dem_;
-    const Dem& map_dem_;
+    const TerrainMap& map_dem_;
     ScenarioConfig scenario_;
     PfConfig pf_config_;
     ParticleFilter filter_;
