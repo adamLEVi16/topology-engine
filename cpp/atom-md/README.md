@@ -35,11 +35,52 @@ packages are doing inside.
 
 ## Build and run
 
+### Linux / macOS
+
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ./build/atom_md
 ```
+
+### Windows
+
+**CMake by itself is not enough** — it generates build files, it does not
+compile. You also need a C++ compiler. Install *Visual Studio Community*
+(free) and tick the **"Desktop development with C++"** workload. That is the
+step people usually miss.
+
+Then, in the CMake GUI:
+
+1. **Where is the source code:** the folder containing `CMakeLists.txt` —
+   i.e. `.../topology-engine/cpp/atom-md`, *not* the repository root.
+2. **Where to build the binaries:** `.../topology-engine/cpp/atom-md/build`
+3. **Configure** → pick your Visual Studio version → *Finish*
+4. **Generate** → **Open Project**
+5. In Visual Studio, switch the configuration dropdown from `Debug` to
+   **`Release`** before building. A Debug build runs roughly 10× slower.
+6. Build, then run it **from a terminal** — it prints results and exits, so
+   double-clicking the `.exe` just flashes a window shut.
+
+```bat
+cd cpp\atom-md
+build\Release\atom_md.exe
+build\Release\atom_md.exe --help
+```
+
+Or skip the GUI entirely from a *Developer Command Prompt for VS*:
+
+```bat
+cmake -S . -B build
+cmake --build build --config Release
+build\Release\atom_md.exe
+```
+
+Note the `--config Release`: Visual Studio is a multi-config generator, so it
+chooses the build type at build time and ignores `CMAKE_BUILD_TYPE`.
+
+`validate.sh` is a bash script — on Windows run it from Git Bash with
+`BIN=./build/Release/atom_md.exe ./validate.sh`.
 
 Then check the physics:
 
