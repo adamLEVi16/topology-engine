@@ -399,6 +399,31 @@ slope. Navigation figures are medians over 8 seeds with the marginalised filter.
 | SIREN 48×2 | 10 KiB | **49.9 m** | 1 334 m | 8 182 m | 11 333 ns |
 | exact grid | 2 500 KiB | 0.0 m | 10.2 m | 21.3 m | 41 ns |
 
+### The two budgets fail differently
+
+Medians hide the shape of the failure. Over 14 seeds, counting a run as diverged
+when it ends more than 300 m out:
+
+| Representation | Median | Diverged | Best seed | Worst seed |
+|---|---|---|---|---|
+| grid 8×, bicubic | 60.3 m | **0/14** | 23.1 m | 89.2 m |
+| SIREN 34 KiB | 101.6 m | **0/14** | 40.0 m | 122.7 m |
+| grid 16×, bicubic | 153.9 m | 6/14 | 134.3 m | 3 987 m |
+| SIREN 10 KiB | 8 098 m | 9/14 | **39.1 m** | 8 185 m |
+
+At the ~39 KiB budget **neither representation ever diverges**. The neural map is
+simply and consistently worse — roughly 1.7× the error, tightly distributed. That
+is the clean comparison.
+
+At the ~10 KiB budget **both representations become unreliable**, the grid failing
+6 times in 14 and the SIREN 9. This budget is below what this terrain needs, and
+the honest reading is not "grid beats neural" but "both fail, one more often."
+
+The SIREN's best seed at 10 KiB is 39.1 m — better than the grid's *best* seed of
+134.3 m. So the neural map demonstrably carries more usable information, exactly
+as its lower RMSE suggests, and yet the filter cannot exploit it reliably. That
+bimodality is the sharpest form of the puzzle below.
+
 ### Finding 4: better reconstruction, worse navigation
 
 The neural map wins on every map-fidelity measure and loses on the only one that
