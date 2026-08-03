@@ -183,6 +183,9 @@ Practical consequences, all of which fall straight out of this:
 10. Rao-Blackwellisation halves the bias error at equal particle count
 11. `rbpf` with 1,000 particles beats `pf4d` with 20,000
 12. Calibrating the bias measurably improves the coast after the fix is lost
+13. A uniform map shift biases the fix by ‖shift‖ without costing confidence
+14. Gradient inflation improves accuracy when map error correlates with slope
+15. Gradient inflation does not degrade a run against an exact map
 
 Current results: 600 s of flight, dead reckoning ends **497 m** out while the
 terrain-aided solution holds **16 m**, with a mean of 32 m once converged.
@@ -270,6 +273,93 @@ Same terrain, same sensors, same particle count. The only difference is how well
 the inertial bias was solved while the terrain was still informative — and it
 shows up as a 2.5× slower error growth and a 4× better final position once the
 terrain has gone quiet. That is the entire argument for co-estimating the bias.
+
+## The map is not the truth
+
+Everything above assumes the stored DEM is exact. It is not. A real map has a
+vertical accuracy and — far more dangerously on steep ground — a horizontal
+registration error. A lateral offset of `d` metres on a slope of gradient `g`
+looks like a vertical error of `|g|·d`, which on a 45° face equals `d` exactly.
+
+`--gradient-inflation` propagates that horizontal uncertainty into the
+measurement variance, per particle:
+
+```
+var_eff(i) = var_sensor + var_map_vertical + ∇DEM(x_i, y_i)ᵀ · Σ_xy · ∇DEM(x_i, y_i)
+```
+
+The gradient is the exact analytic derivative of the bilinear interpolant, not a
+finite difference — though note it is only piecewise continuous, since a bilinear
+surface is C0 and its gradient jumps across cell boundaries.
+
+**One thing here is not optional.** Once the variance varies per particle, the
+likelihood's normalising term `−½·log(var)` must be carried explicitly. With a
+constant sigma it is a shared constant that cancels during normalisation. With a
+per-particle sigma it does not, and dropping it hands every particle standing on
+a cliff a free weight bonus — because `exp(−d²/2σ²) → 1` as `σ` grows. The filter
+would then quietly migrate onto steep ground, which is the opposite of what the
+inflation is for.
+
+### Finding 1: a uniform map shift biases the fix, it does not starve the filter
+
+The intuitive prediction is that misregistration on steep terrain kills the
+correct particles. Measured, over terrain with a 52° mean slope:
+
+| Map shift | ‖shift‖ | Final error | Fix held |
+|---|---|---|---|
+| 0, 0 | 0.0 m | 3.6 m | 96.8 % |
+| 10, 10 | 14.1 m | 16.7 m | 96.8 % |
+| 20, 20 | 28.3 m | 30.3 m | 96.8 % |
+| 40, 40 | 56.6 m | 59.6 m | 96.8 % |
+| 80, 80 | 113.1 m | 115.5 m | 96.2 % |
+
+The error tracks ‖shift‖ almost exactly and the filter never loses confidence.
+
+The reason is that a uniform shift is a **common-mode** error: every particle in
+the neighbourhood takes nearly the same spurious innovation, and the log-sum-exp
+normalisation cancels common offsets *exactly*. Starvation is therefore
+impossible from this mechanism. What you get instead is arguably worse — a filter
+that is confidently wrong by precisely the map's registration error, and no
+internal signal that anything is amiss.
+
+### Finding 2: slope-correlated map error is the real hazard
+
+Starvation needs error that **differentially** penalises particles, which means
+error correlated with local slope. Map *resolution* does exactly that: a coarse
+grid is badly wrong on steep ground and nearly right on flat ground, so particles
+over rough terrain are systematically punished and the filter drifts toward flat
+areas — precisely where there is no information.
+
+Truth on a 30 m grid, filter navigating a decimated copy, 8 seeds per cell:
+
+| Map | Inflation off (median / worst) | Inflation on (median / worst) |
+|---|---|---|
+| exact | 6.8 m / 12.1 m | 6.0 m / 9.8 m |
+| 4× coarse | 50.5 m / 61.4 m | 44.1 m / 55.0 m |
+| 8× coarse | 48.2 m / **4682.8 m** | 36.5 m / 46.2 m |
+| 12× coarse | 52.6 m / 88.7 m | 42.0 m / 58.8 m |
+| 16× coarse | **64.6 m** / 84.6 m | 75.6 m / 132.3 m |
+
+At 8× coarse across 24 seeds: 1/24 runs diverged catastrophically without
+inflation versus 0/24 with, mean error 252 m versus 41 m, worst case 4683 m
+versus 60 m.
+
+Read honestly, that is a **~15–25 % median improvement and a large reduction in
+tail risk**, not a rescue from certain death. A 1-versus-0 divergence count over
+24 seeds carries no statistical weight by itself; the mean and worst case are
+what actually carry the result.
+
+### Finding 3: inflation backfires when the map is too coarse to differentiate
+
+At 16× the effect reverses — inflation is *worse* (75.6 m versus 64.6 m median).
+The mechanism is self-inflicted: the gradient is computed from the degraded map,
+so once the map is too coarse to represent the real slope, the filter is
+inflating variance according to a gradient that is itself wrong, and throwing
+away good measurements for no reason.
+
+Gradient inflation is therefore useful over a **middle band** of map quality —
+degraded enough that slope-correlated error matters, accurate enough that the
+slope estimate is still meaningful.
 
 ## Where this would go next
 

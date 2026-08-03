@@ -63,6 +63,9 @@ struct RunSummary {
     double lost_fix_time = -1.0;
     double roughness_at_loss = 0.0;
 
+    // Lowest effective sample size seen — the particle-starvation indicator.
+    double min_neff_fraction = 1.0;
+
     // Bias calibration, and what it buys once the terrain runs out.
     Vec2   true_bias;
     Vec2   final_est_bias;
@@ -73,7 +76,11 @@ struct RunSummary {
 
 class NavSim {
 public:
-    NavSim(const Dem& dem, const ScenarioConfig& scenario, const PfConfig& pf);
+    // truth_dem is the ground the vehicle actually flies over; map_dem is the
+    // stored map the filter navigates against. They are the same object unless
+    // the map is deliberately degraded.
+    NavSim(const Dem& truth_dem, const Dem& map_dem,
+           const ScenarioConfig& scenario, const PfConfig& pf);
 
     RunSummary run(std::ostream* log);
 
@@ -82,7 +89,8 @@ public:
     double altitude() const { return altitude_; }
 
 private:
-    const Dem& dem_;
+    const Dem& truth_dem_;
+    const Dem& map_dem_;
     ScenarioConfig scenario_;
     PfConfig pf_config_;
     ParticleFilter filter_;

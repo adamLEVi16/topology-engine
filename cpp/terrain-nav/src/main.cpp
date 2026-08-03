@@ -1,6 +1,7 @@
 #include <cstdlib>
 #include <exception>
 #include <iomanip>
+#include <cmath>
 #include <iostream>
 #include <string>
 
@@ -21,7 +22,14 @@ void print_usage(const char* argv0) {
         "  --dem-size N       synthetic DEM side in samples        (default 1200)\n"
         "  --dem-spacing X    metres between samples               (default 30)\n"
         "  --hgt PATH         load a real SRTM .hgt tile instead\n"
-        "  --terrain-seed N   synthetic terrain seed               (default 1)\n\n"
+        "  --terrain-seed N   synthetic terrain seed               (default 1)\n"
+        "  --relief X         vertical relief of the terrain, m     (default 900)\n\n"
+        "map error\n"
+        "  --gradient-inflation  scale measurement variance by local slope\n"
+        "  --map-shift X,Y    deliberate map misregistration, m     (default 0,0)\n"
+        "  --map-h-sigma X    DEM horizontal accuracy, m            (default 12)\n"
+        "  --map-v-sigma X    DEM vertical accuracy, m              (default 3)\n"
+        "  --map-downsample N degrade the stored map by factor N   (default 1)\n\n"
         "flight\n"
         "  --speed X          ground speed, m/s                    (default 120)\n"
         "  --heading X        degrees, 0 = east                    (default 20)\n"
@@ -71,6 +79,8 @@ int main(int argc, char** argv) {
     double dem_spacing = 30.0;
     bool spacing_set = false;
     unsigned terrain_seed = 1;
+    double relief = 900.0;
+    int map_downsample = 1;
     bool quiet = false;
 
     for (int i = 1; i < argc; ++i) {
@@ -91,6 +101,21 @@ int main(int argc, char** argv) {
         else if (arg == "--radar-sigma")   scenario.radar_sigma = std::atof(require_value(argc, argv, i));
         else if (arg == "--baro-sigma")    scenario.baro_sigma = std::atof(require_value(argc, argv, i));
         else if (arg == "--ins-bias")      scenario.ins_bias = std::atof(require_value(argc, argv, i));
+        else if (arg == "--relief")        relief = std::atof(require_value(argc, argv, i));
+        else if (arg == "--gradient-inflation") pf.inflate_on_gradient = true;
+        else if (arg == "--map-downsample") map_downsample = std::atoi(require_value(argc, argv, i));
+        else if (arg == "--map-h-sigma")   pf.map_horizontal_sigma = std::atof(require_value(argc, argv, i));
+        else if (arg == "--map-v-sigma")   pf.map_vertical_sigma = std::atof(require_value(argc, argv, i));
+        else if (arg == "--map-shift") {
+            const std::string v = require_value(argc, argv, i);
+            const auto comma = v.find(',');
+            if (comma == std::string::npos) {
+                std::cerr << "error: --map-shift expects X,Y\n";
+                return 2;
+            }
+            pf.map_shift_x = std::atof(v.substr(0, comma).c_str());
+            pf.map_shift_y = std::atof(v.substr(comma + 1).c_str());
+        }
         else if (arg == "--bias-prior")    pf.bias_prior = std::atof(require_value(argc, argv, i));
         else if (arg == "--bias-walk")     pf.bias_walk = std::atof(require_value(argc, argv, i));
         else if (arg == "--particles")     pf.count = std::atoi(require_value(argc, argv, i));
@@ -130,7 +155,7 @@ int main(int argc, char** argv) {
         // For a real tile, only override the spacing if the user actually asked;
         // otherwise let the loader derive it from the filename's latitude.
         const Dem dem = hgt_path.empty()
-            ? Dem::synthetic(dem_size, dem_size, dem_spacing, terrain_seed, terrain_kind)
+            ? Dem::synthetic(dem_size, dem_size, dem_spacing, terrain_seed, terrain_kind, relief)
             : Dem::from_hgt(hgt_path, spacing_set ? dem_spacing : 0.0);
 
         std::ostream& out = std::cout;
@@ -139,11 +164,21 @@ int main(int argc, char** argv) {
             << "grid         " << dem.width() << " x " << dem.height()
             << " at " << dem.spacing() << " m  ("
             << dem.extent_x() / 1000.0 << " x " << dem.extent_y() / 1000.0 << " km)\n"
-            << "elevation    " << dem.min_elevation() << " to " << dem.max_elevation() << " m\n"
+            << "elevation    " << dem.min_elevation() << " to " << dem.max_elevation()
+            << " m   (mean slope " << std::setprecision(3) << dem.mean_slope()
+            << ", " << std::setprecision(1) << std::atan(dem.mean_slope()) * 180.0 / 3.14159265 << " deg)\n"
             << "particles    " << pf.count << "\n"
             << "initial box  +/- " << pf.init_radius << " m\n";
 
-        NavSim sim(dem, scenario, pf);
+        const Dem map_dem = (map_downsample > 1) ? dem.downsample(map_downsample) : dem;
+        if (map_downsample > 1) {
+            out << "stored map   " << map_dem.width() << " x " << map_dem.height()
+                << " at " << map_dem.spacing() << " m   ("
+                << map_dem.memory_bytes() / 1024 << " KiB vs "
+                << dem.memory_bytes() / 1024 << " KiB truth)\n";
+        }
+
+        NavSim sim(dem, map_dem, scenario, pf);
         out << "flight       " << scenario.speed << " m/s at " << scenario.heading_deg
             << " deg, " << sim.altitude() << " m MSL\n";
 

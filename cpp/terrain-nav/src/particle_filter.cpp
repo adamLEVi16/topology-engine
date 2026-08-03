@@ -113,19 +113,52 @@ void ParticleFilter::predict(const Vec2& measured_velocity, double dt) {
 }
 
 void ParticleFilter::update(double measured_ground_elevation) {
-    const double inv_two_sigma2 = 1.0 / (2.0 * config_.meas_sigma * config_.meas_sigma);
+    const double sensor_var = config_.meas_sigma * config_.meas_sigma;
+    const double map_v_var = config_.map_vertical_sigma * config_.map_vertical_sigma;
+    const double map_h_var = config_.map_horizontal_sigma * config_.map_horizontal_sigma;
 
-    for (auto& p : particles_) {
-        if (!dem_.in_bounds(p.x, p.y)) {
+    double sigma_accum = 0.0;
+    double sigma_weight = 0.0;
+
+    for (std::size_t k = 0; k < particles_.size(); ++k) {
+        Particle& p = particles_[k];
+        const double qx = p.x + config_.map_shift_x;
+        const double qy = p.y + config_.map_shift_y;
+
+        if (!dem_.in_bounds(qx, qy)) {
             // Off the map: not impossible, just unsupported. A large finite
             // penalty rather than -inf keeps the filter recoverable if every
             // particle drifts outside at once.
             p.log_weight += -50.0;
             continue;
         }
-        const double innovation = measured_ground_elevation - dem_.elevation(p.x, p.y);
-        p.log_weight += -innovation * innovation * inv_two_sigma2;
+
+        double variance = sensor_var;
+        if (config_.inflate_on_gradient) {
+            // First-order propagation of horizontal map error into vertical:
+            //   var_eff = var_sensor + var_map_v + g^T * Sigma_xy * g
+            // with Sigma_xy isotropic. On flat ground this reduces to the
+            // sensor noise; on a 45-degree slope (|g| = 1) it adds the full
+            // horizontal registration variance.
+            const Vec2 g = dem_.gradient(qx, qy);
+            variance += map_v_var + (g.x * g.x + g.y * g.y) * map_h_var;
+        }
+
+        const double innovation = measured_ground_elevation - dem_.elevation(qx, qy);
+
+        // The -0.5*log(variance) term is NOT optional once the variance varies
+        // per particle. With a constant sigma it is a shared constant that
+        // cancels in normalisation; here, dropping it would hand every particle
+        // sitting on a cliff a free weight bonus, because exp(-d^2/2s^2) tends
+        // to 1 as s grows. The filter would then drift onto steep ground.
+        p.log_weight += -0.5 * innovation * innovation / variance
+                        - 0.5 * std::log(variance);
+
+        sigma_accum += lin_weights_[k] * std::sqrt(variance);
+        sigma_weight += lin_weights_[k];
     }
+
+    mean_eff_sigma_ = (sigma_weight > 0.0) ? sigma_accum / sigma_weight : config_.meas_sigma;
 
     normalize_weights();
     refresh_estimate();

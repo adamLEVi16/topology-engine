@@ -68,7 +68,7 @@ double fbm(double x, double y, int octaves, unsigned seed, bool ridged) {
 }  // namespace
 
 Dem Dem::synthetic(int width, int height, double spacing,
-                   unsigned seed, const std::string& kind) {
+                   unsigned seed, const std::string& kind, double relief_scale) {
     if (width < 2 || height < 2) throw std::invalid_argument("DEM must be at least 2x2");
     if (spacing <= 0.0) throw std::invalid_argument("DEM spacing must be positive");
 
@@ -86,7 +86,7 @@ Dem Dem::synthetic(int width, int height, double spacing,
 
     // Roughly six noise cycles across the map, then 8 octaves of detail on top.
     const double scale = 6.0 / std::max(width, height);
-    const double relief = flat ? 12.0 : 900.0;   // metres of vertical relief
+    const double relief = flat ? (relief_scale / 75.0) : relief_scale;  // metres of vertical relief
     const double base = 300.0;
 
     for (int j = 0; j < height; ++j) {
@@ -218,6 +218,33 @@ double Dem::elevation(double x, double y) const {
     return top + (bot - top) * fy;
 }
 
+Vec2 Dem::gradient(double x, double y) const {
+    double gx = x / spacing_;
+    double gy = y / spacing_;
+    gx = std::min(std::max(gx, 0.0), static_cast<double>(w_ - 1));
+    gy = std::min(std::max(gy, 0.0), static_cast<double>(h_ - 1));
+
+    int i = static_cast<int>(gx);
+    int j = static_cast<int>(gy);
+    if (i >= w_ - 1) i = w_ - 2;
+    if (j >= h_ - 1) j = h_ - 2;
+    if (i < 0) i = 0;
+    if (j < 0) j = 0;
+
+    const double fx = gx - i;
+    const double fy = gy - j;
+
+    const double z00 = at(i,     j);
+    const double z10 = at(i + 1, j);
+    const double z01 = at(i,     j + 1);
+    const double z11 = at(i + 1, j + 1);
+
+    // d/dx and d/dy of z = z00(1-fx)(1-fy) + z10 fx(1-fy) + z01(1-fx)fy + z11 fx fy
+    const double dz_dfx = (z10 - z00) * (1.0 - fy) + (z11 - z01) * fy;
+    const double dz_dfy = (z01 - z00) * (1.0 - fx) + (z11 - z10) * fx;
+    return Vec2{dz_dfx / spacing_, dz_dfy / spacing_};
+}
+
 double Dem::roughness(double x, double y, double window) const {
     const int half = std::max(1, static_cast<int>(window / spacing_ / 2.0));
     const int ci = std::min(std::max(static_cast<int>(x / spacing_), 0), w_ - 1);
@@ -237,4 +264,52 @@ double Dem::roughness(double x, double y, double window) const {
     if (n < 2) return 0.0;
     const double mean = sum / n;
     return std::sqrt(std::max(0.0, sum2 / n - mean * mean));
+}
+
+double Dem::mean_slope() const {
+    double sum = 0.0;
+    long n = 0;
+    for (int j = 1; j < h_ - 1; ++j) {
+        for (int i = 1; i < w_ - 1; ++i) {
+            const double dx = (at(i + 1, j) - at(i - 1, j)) / (2.0 * spacing_);
+            const double dy = (at(i, j + 1) - at(i, j - 1)) / (2.0 * spacing_);
+            sum += std::sqrt(dx * dx + dy * dy);
+            ++n;
+        }
+    }
+    return n > 0 ? sum / n : 0.0;
+}
+
+Dem Dem::downsample(int factor) const {
+    if (factor < 1) throw std::invalid_argument("downsample factor must be >= 1");
+    if (factor == 1) return *this;
+
+    Dem out;
+    out.w_ = (w_ - 1) / factor + 1;
+    out.h_ = (h_ - 1) / factor + 1;
+    out.spacing_ = spacing_ * factor;
+    out.z_.resize(static_cast<std::size_t>(out.w_) * out.h_);
+
+    // Average the source block centred on each output node, so the coarse grid
+    // keeps the same physical extent and the same mean elevation.
+    const int half = factor / 2;
+    for (int j = 0; j < out.h_; ++j) {
+        for (int i = 0; i < out.w_; ++i) {
+            const int ci = i * factor;
+            const int cj = j * factor;
+            double sum = 0.0;
+            int n = 0;
+            for (int dj = -half; dj <= half; ++dj) {
+                for (int di = -half; di <= half; ++di) {
+                    const int si = std::min(std::max(ci + di, 0), w_ - 1);
+                    const int sj = std::min(std::max(cj + dj, 0), h_ - 1);
+                    sum += at(si, sj);
+                    ++n;
+                }
+            }
+            out.z_[static_cast<std::size_t>(j) * out.w_ + i] = static_cast<float>(sum / n);
+        }
+    }
+    out.recompute_bounds();
+    return out;
 }

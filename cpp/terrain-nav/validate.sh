@@ -133,6 +133,42 @@ else
                      || fail "coast drift ${c2} m/s uncalibrated vs ${cr} m/s calibrated"
 fi
 
+echo "13. a uniform map shift must bias the fix, NOT starve the filter"
+# Common-mode error: every nearby particle takes the same hit, and log-sum-exp
+# cancels common offsets exactly, so the filter stays confident and stays wrong.
+out=$("$BIN" --filter rbpf --relief 5000 --map-shift 40,40 --duration 400 \
+      --dem-size 1600 --quiet)
+err=$(echo "$out" | awk '/terrain-aided final error/ {print $4}')
+held=$(echo "$out" | awk '/fix held/ {print $4}')
+ok=$(awk -v e="$err" -v h="$held" 'BEGIN{print (e > 40 && e < 90 && h > 90) ? 1 : 0}')
+[[ "$ok" == 1 ]] && pass "shift |40,40|=56.6 m gave ${err} m error, fix held ${held}%" \
+                 || fail "shift |40,40|=56.6 m gave ${err} m error, fix held ${held}%"
+
+echo "14. gradient inflation must help when map error correlates with slope"
+median_err() {   # extra-args -> median final error over 5 seeds
+    local out=""
+    for s in 1 2 3 4 5; do
+        out="$out $("$BIN" --filter rbpf --relief 5000 --map-downsample 8 "$@" \
+                    --seed $s --duration 400 --dem-size 1600 --quiet \
+                    | awk '/terrain-aided final error/{print $4}')"
+    done
+    echo "$out" | tr ' ' '\n' | grep -v '^$' | sort -n | awk '{a[NR]=$1} END{print a[int((NR+1)/2)]}'
+}
+off=$(median_err)
+on=$(median_err --gradient-inflation)
+ok=$(awk -v a="$off" -v b="$on" 'BEGIN{print (b < a) ? 1 : 0}')
+[[ "$ok" == 1 ]] && pass "8x degraded map: ${off} m without inflation, ${on} m with" \
+                 || fail "8x degraded map: ${off} m without inflation, ${on} m with"
+
+echo "15. inflation must not hurt when the map is exact"
+clean_off=$("$BIN" --filter rbpf --relief 5000 --seed 3 --duration 400 --dem-size 1600 \
+            --quiet | awk '/terrain-aided final error/{print $4}')
+clean_on=$("$BIN" --filter rbpf --relief 5000 --seed 3 --gradient-inflation --duration 400 \
+           --dem-size 1600 --quiet | awk '/terrain-aided final error/{print $4}')
+ok=$(awk -v a="$clean_off" -v b="$clean_on" 'BEGIN{print (b < a * 2.5) ? 1 : 0}')
+[[ "$ok" == 1 ]] && pass "exact map: ${clean_off} m without, ${clean_on} m with" \
+                 || fail "exact map: inflation degraded a perfect map (${clean_off} -> ${clean_on})"
+
 echo
 if [[ $fails -eq 0 ]]; then echo "all checks passed"; else echo "$fails check(s) failed"; fi
 exit $fails

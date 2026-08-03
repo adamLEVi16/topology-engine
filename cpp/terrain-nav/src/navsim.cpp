@@ -17,10 +17,11 @@ double distance(double ax, double ay, double bx, double by) {
 }
 }  // namespace
 
-NavSim::NavSim(const Dem& dem, const ScenarioConfig& scenario, const PfConfig& pf)
-    : dem_(dem), scenario_(scenario), pf_config_(pf),
-      filter_(pf, dem, scenario.seed ^ 0x9e3779b97f4a7c15ull) {
-    altitude_ = dem_.max_elevation() + scenario_.clearance;
+NavSim::NavSim(const Dem& truth_dem, const Dem& map_dem,
+               const ScenarioConfig& scenario, const PfConfig& pf)
+    : truth_dem_(truth_dem), map_dem_(map_dem), scenario_(scenario), pf_config_(pf),
+      filter_(pf, map_dem, scenario.seed ^ 0x9e3779b97f4a7c15ull) {
+    altitude_ = truth_dem_.max_elevation() + scenario_.clearance;
 }
 
 RunSummary NavSim::run(std::ostream* log) {
@@ -92,7 +93,7 @@ RunSummary NavSim::run(std::ostream* log) {
             true_x += vx * scenario_.dt;
             true_y += vy * scenario_.dt;
         }
-        if (!dem_.in_bounds(true_x, true_y)) {
+        if (!truth_dem_.in_bounds(true_x, true_y)) {
             if (log) *log << "\ntrack left the map at t = " << t << " s\n";
             break;
         }
@@ -111,7 +112,7 @@ RunSummary NavSim::run(std::ostream* log) {
         // A radar altimeter gives height above ground; a barometer gives height
         // above sea level. Their difference is the ground elevation underneath —
         // the single scalar per second that the whole filter runs on.
-        const double ground_truth = dem_.elevation(true_x, true_y);
+        const double ground_truth = truth_dem_.elevation(true_x, true_y);
         const double radar = (altitude_ - ground_truth) + scenario_.radar_sigma * unit(rng);
         const double baro = altitude_ + scenario_.baro_sigma * unit(rng);
         const double ground_measured = baro - radar;
@@ -134,13 +135,15 @@ RunSummary NavSim::run(std::ostream* log) {
         rec.neff = filter_.effective_sample_size();
         rec.ground_truth = ground_truth;
         rec.ground_measured = ground_measured;
-        rec.roughness = dem_.roughness(true_x, true_y, 1500.0);
+        rec.roughness = truth_dem_.roughness(true_x, true_y, 1500.0);
         rec.est_bias = filter_.mean_bias();
         rec.bias_error = norm(rec.est_bias - true_bias);
         rec.bias_spread = filter_.bias_spread();
         history_.push_back(rec);
 
         summary.max_dr_error = std::max(summary.max_dr_error, rec.dr_error);
+        summary.min_neff_fraction = std::min(summary.min_neff_fraction,
+                                             rec.neff / static_cast<double>(pf_config_.count));
 
         // Confidence comes from the posterior spread, not from the error, which
         // is only observable here because this is a simulation.

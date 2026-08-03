@@ -40,6 +40,21 @@ struct PfConfig {
     double bias_prior        = 3.0;     // m/s — initial bias uncertainty (1 sigma)
     double bias_walk         = 0.004;   // m/s per step — how fast the bias may wander
     double bias_roughening   = 0.02;    // m/s — bias jitter after resampling (4D only)
+
+    // --- map error model -----------------------------------------------------
+    // The DEM is not truth. It has a vertical accuracy, and — far more
+    // dangerously on steep ground — a horizontal registration error. A lateral
+    // map offset of d metres on a slope of gradient g looks like a vertical
+    // error of |g|·d, which on a 45-degree face equals d exactly. Ignore that
+    // and the filter kills its own correct particles on every ridge.
+    bool   inflate_on_gradient = false;  // scale measurement variance by local slope
+    double map_vertical_sigma  = 3.0;    // m — DEM vertical accuracy
+    double map_horizontal_sigma = 12.0;  // m — DEM horizontal registration accuracy
+
+    // Deliberate misregistration of the stored map, for testing. The filter
+    // queries the DEM at (x + shift), while truth is sampled unshifted.
+    double map_shift_x = 0.0;
+    double map_shift_y = 0.0;
 };
 
 // Particle filter over horizontal position, optionally co-estimating the
@@ -65,6 +80,9 @@ public:
     double spread() const;                  // RMS horizontal distance from the mean
     double effective_sample_size() const { return neff_; }
     bool   resampled_last_update() const { return resampled_; }
+    // Weighted mean of the per-particle measurement sigma actually used on the
+    // last update — flat where the ground is flat, inflated on slopes.
+    double mean_effective_sigma() const { return mean_eff_sigma_; }
 
     const std::vector<Particle>& particles() const { return particles_; }
     const std::vector<double>& weights() const { return lin_weights_; }
@@ -85,5 +103,6 @@ private:
     double mean_y_ = 0.0;
     Vec2   mean_bias_;
     double neff_ = 0.0;
+    double mean_eff_sigma_ = 0.0;
     bool   resampled_ = false;
 };
