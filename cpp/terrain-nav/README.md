@@ -474,6 +474,91 @@ metrics. Note also that the stated motivation — memory-constrained micro-drone
 is exactly where a 300× compute penalty is least affordable, since such platforms
 are compute-constrained too.
 
+## Map-error injection: what the filter actually cares about
+
+Since elevation RMSE fails to predict navigation performance, the question is
+what does. Comparing whole representations confounds many properties at once, so
+`PerturbedMap` wraps the **exact** truth grid and adds a synthetic error field
+whose amplitude, spatial scale, and anisotropy can be varied one at a time.
+
+`error_injection.sh` runs the three sweeps: exact 1000×1000 grid at 30 m, ridged
+terrain, flight due east, marginalised filter, no gradient inflation, 12 seeds
+per cell. Sensor noise is 9.5 m throughout.
+
+### Amplitude — how much error can it absorb?
+
+| Injected | Map RMSE | Nav median | Diverged | Worst |
+|---|---|---|---|---|
+| 0 m (control) | 0.0 m | 15.8 m | 0/12 | 25.2 m |
+| 5 m | 5.0 m | 20.4 m | 0/12 | 32.3 m |
+| 10 m | 10.0 m | 25.4 m | 0/12 | 51.0 m |
+| 20 m | 19.9 m | 50.5 m | 0/12 | 79.0 m |
+| 40 m | 39.8 m | 174.9 m | **4/12** | 5 275 m |
+| 80 m | 79.7 m | 536.3 m | **9/12** | 1 958 m |
+
+Clean and monotonic, with a sharp knee. The filter absorbs map error up to about
+**twice the sensor noise** with only graceful degradation, and the breakdown sits
+between 20 m and 40 m — roughly **2× to 4× sensor noise**. Below that it fails
+gradually; above it, it fails catastrophically.
+
+### Spatial scale — misplaced hills, or fake boulders?
+
+Amplitude fixed at 20 m, so **every row has identical map RMSE**.
+
+| Wavelength | Map RMSE | Nav median | Diverged | Worst |
+|---|---|---|---|---|
+| 100 m | 20.0 m | 27.5 m | 1/12 | 1 841 m |
+| 250 m | 19.9 m | **76.5 m** | 0/12 | 89.2 m |
+| 500 m | 19.9 m | 50.5 m | 0/12 | 79.0 m |
+| 1 000 m | 19.9 m | 26.8 m | 1/12 | 2 242 m |
+| 2 500 m | 20.0 m | **17.2 m** | 0/12 | 46.5 m |
+| 5 000 m | 19.9 m | 20.4 m | 1/12 | 2 365 m |
+
+**This is the result.** The same RMS error is **4.5× more damaging at 250 m than
+at 2 500 m**, and the dependence is not monotonic — it peaks in a middle band.
+At 2 500 m the injected error is almost free: 17.2 m against a perfect-map
+control of 15.8 m.
+
+So neither extreme is the problem. Fake boulders average out; a misplaced
+mountain is nearly harmless. What hurts is error at an intermediate scale.
+
+The reading consistent with the earlier uniform-shift result is that
+long-wavelength error is **common-mode** across the particle cloud, and
+log-sum-exp cancels common offsets exactly; short-wavelength error decorrelates
+within the cloud and behaves like extra white noise the sensor model already
+tolerates; only intermediate-scale error varies coherently *across* the cloud in
+a way that differentially misweights particles. That is interpretation, not
+measurement — what is measured is the 4.5× swing at fixed RMSE.
+
+### Isotropy — along-track versus cross-track
+
+Amplitude 20 m, nominal wavelength 500 m, geometric mean held fixed.
+
+| Aspect | λ along-track | λ cross-track | Nav median | Diverged |
+|---|---|---|---|---|
+| 0.125× | 177 m | 1 414 m | 10.6 m | 0/12 |
+| 0.25× | 250 m | 1 000 m | 39.6 m | 2/12 |
+| 0.5× | 354 m | 707 m | 67.5 m | 4/12 |
+| 1× | 500 m | 500 m | 50.5 m | 0/12 |
+| 2× | 707 m | 354 m | 22.2 m | 0/12 |
+| 4× | 1 000 m | 250 m | 87.4 m | 0/12 |
+| 8× | 1 414 m | 177 m | 47.1 m | 4/12 |
+
+**No reliable directional effect was detected, and this sweep is confounded.**
+Changing the aspect ratio necessarily changes both wavelengths, and the previous
+sweep showed navigation is strongly and non-monotonically sensitive to
+wavelength — so most of the variation here is explainable by the along-track and
+cross-track scales moving through the damaging middle band, not by anisotropy
+itself. The medians do not trend with direction, and the divergence counts point
+the opposite way from the medians at 0.25× versus 4×.
+
+The one weak hint is that the two cells with a 250 m component behave
+differently depending on its orientation — 87.4 m median when it is cross-track
+against 39.6 m when along-track — but with 12 seeds and divergence counts running
+counter to the medians, that is not separable from noise. Answering this properly
+needs a design that holds both wavelengths fixed and rotates the error field
+instead, which is not what was built here.
+
 ## Where this would go next
 
 - **A real correlation stage.** Classic TERCOM correlates a whole batch of
