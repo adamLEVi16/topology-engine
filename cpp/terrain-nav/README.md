@@ -410,20 +410,30 @@ counts:
 - Error spatial correlation length: **78 m vs 109 m** — its error is *less* coherent
 - Static profile matching against the map localises correctly, as well as the grid
 
-And yet navigation is 1.6× worse at budget A and 9× worse at budget B, at ~300×
-the query cost. Three plausible explanations were tested and rejected: it is not
-over-smoothing, not a long-range coherent warp, and not a loss of map information
-(a static rigid-translation profile search finds the right position with either
-map). Inspecting a run directly shows the filter holding a *confident* fix — 30 m
-posterior spread — on a position wrong by ~100 m, while its inertial bias estimate
-diverges to 4.5 m/s against a true value of 1.2 m/s and a prior of 3.0 m/s.
+And yet navigation is worse at both budgets, at ~300× the query cost.
 
-The working explanation is coupling rather than accuracy: a map whose error varies
-with position produces an apparent position offset that changes as the vehicle
-moves, the filter attributes that changing offset to vehicle motion, and it lands
-in the bias estimate — which then corrupts the prediction step. Reconstruction
-error and navigation error are simply not the same quantity, and MSE training
-optimises the wrong one.
+**The mechanism is unresolved.** Seven explanations were tested and every one was
+rejected by measurement:
+
+| Hypothesis | Test | Result |
+|---|---|---|
+| Over-smoothed, loses fine detail | mean \|∇\| retained vs truth | rejected — SIREN keeps **more** (73 % vs 63 %) |
+| Long-range coherent warp | error autocorrelation length | rejected — SIREN is **shorter** (78 m vs 109 m) |
+| Loses navigational information | exhaustive profile-match search | rejected — localises correctly, as well as the grid |
+| Over-inflates variance via bigger gradients | rerun with inflation disabled | rejected — worse either way (105 vs 110 m) |
+| Corrupts the inertial bias estimate | rerun with `pf2d`, which has no bias state | rejected — worse either way (108 vs 104 m) |
+| Creates spurious local minima that trap the filter | count minima in the cost surface | rejected — same count as the grid (1.1) |
+| Low-frequency error the filter reads as terrain | bandpass the error field | rejected — SIREN has **less** (4.1 % vs 9.7 %) |
+
+A run inspected directly shows the filter holding a *confident* fix — 30 m
+posterior spread — on a position wrong by ~100 m. So it is not losing track; it is
+locking onto the wrong place and believing it. But every property of the map that
+would plausibly cause that is better for the SIREN than for the grid.
+
+The safest statement the evidence supports is the narrow one:
+**elevation RMSE does not predict navigation performance, and can rank
+representations in the wrong order.** Anything beyond that would be a story rather
+than a finding.
 
 ### Finding 5: the cheap idea won
 
