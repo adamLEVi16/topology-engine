@@ -9,32 +9,106 @@ ParticleFilter::ParticleFilter(const PfConfig& config, const Dem& dem, std::uint
     : config_(config), dem_(dem), rng_(seed) {
     if (config_.count < 2) throw std::invalid_argument("particle count must be >= 2");
     if (config_.meas_sigma <= 0.0) throw std::invalid_argument("meas_sigma must be > 0");
+    if (config_.process_noise <= 0.0) throw std::invalid_argument("process_noise must be > 0");
     particles_.resize(static_cast<std::size_t>(config_.count));
     scratch_.resize(particles_.size());
     lin_weights_.assign(particles_.size(), 1.0 / config_.count);
 }
 
+Vec2 ParticleFilter::sample_gaussian(const Mat2& covariance) {
+    std::normal_distribution<double> unit(0.0, 1.0);
+    const Mat2 l = cholesky(covariance);
+    const double n0 = unit(rng_);
+    const double n1 = unit(rng_);
+    return Vec2{l.m00 * n0, l.m10 * n0 + l.m11 * n1};
+}
+
 void ParticleFilter::initialize(double x0, double y0) {
-    // A uniform box, not a Gaussian: before the first terrain fix we genuinely
-    // have no idea where in the uncertainty region we are, and a Gaussian prior
-    // would understate the tails the filter has to search.
+    // A uniform box for position: before the first terrain fix we genuinely have
+    // no idea where in the uncertainty region we are, and a Gaussian prior would
+    // understate the tails the filter has to search.
     std::uniform_real_distribution<double> ux(x0 - config_.init_radius, x0 + config_.init_radius);
     std::uniform_real_distribution<double> uy(y0 - config_.init_radius, y0 + config_.init_radius);
+    // The bias prior is Gaussian, and deliberately identical for both bias-aware
+    // modes so the comparison between them is not confounded by the prior.
+    std::normal_distribution<double> bias_prior(0.0, config_.bias_prior);
 
     for (auto& p : particles_) {
         p.x = ux(rng_);
         p.y = uy(rng_);
         p.log_weight = 0.0;
+
+        switch (config_.mode) {
+            case FilterMode::Position2D:
+                p.bias = Vec2{};
+                break;
+            case FilterMode::Bootstrap4D:
+                p.bias = Vec2{bias_prior(rng_), bias_prior(rng_)};
+                break;
+            case FilterMode::RaoBlackwellized:
+                p.bias = Vec2{};
+                p.bias_cov = Mat2::identity(config_.bias_prior * config_.bias_prior);
+                break;
+        }
     }
     std::fill(lin_weights_.begin(), lin_weights_.end(), 1.0 / config_.count);
     refresh_estimate();
 }
 
-void ParticleFilter::predict(double dx, double dy) {
-    std::normal_distribution<double> jitter(0.0, config_.process_noise);
+void ParticleFilter::predict(const Vec2& measured_velocity, double dt) {
+    const double q = config_.process_noise * config_.process_noise;
+    const Mat2 process_cov = Mat2::identity(q);
+    std::normal_distribution<double> pos_jitter(0.0, config_.process_noise);
+    std::normal_distribution<double> bias_jitter(0.0, config_.bias_walk);
+
     for (auto& p : particles_) {
-        p.x += dx + jitter(rng_);
-        p.y += dy + jitter(rng_);
+        switch (config_.mode) {
+            case FilterMode::Position2D: {
+                p.x += measured_velocity.x * dt + pos_jitter(rng_);
+                p.y += measured_velocity.y * dt + pos_jitter(rng_);
+                break;
+            }
+
+            case FilterMode::Bootstrap4D: {
+                // Each particle is one joint hypothesis about position and bias.
+                // The bias is never measured directly; wrong-bias particles simply
+                // walk off terrain-consistent ground and die at resampling.
+                const Vec2 v = measured_velocity - p.bias;
+                p.x += v.x * dt + pos_jitter(rng_);
+                p.y += v.y * dt + pos_jitter(rng_);
+                p.bias.x += bias_jitter(rng_);
+                p.bias.y += bias_jitter(rng_);
+                break;
+            }
+
+            case FilterMode::RaoBlackwellized: {
+                // Marginalised prediction. The step is drawn from the covariance
+                // that accounts for both process noise and this particle's own
+                // bias uncertainty, so a particle unsure of its bias takes a
+                // correspondingly wider step.
+                const Vec2 nominal = (measured_velocity - p.bias) * dt;
+                const Mat2 s = p.bias_cov * (dt * dt) + process_cov;
+                const Vec2 step = nominal + sample_gaussian(s);
+
+                p.x += step.x;
+                p.y += step.y;
+
+                // The realised step is now a linear measurement of the bias:
+                //   step = (v_meas - b)*dt + w,   so   H = -dt * I
+                // This is the whole trick — the terrain never sees the bias, but
+                // the displacement does.
+                const Vec2 innovation = step - nominal;
+                const Mat2 s_inv = inverse(s);
+                const Mat2 gain = p.bias_cov * s_inv * (-dt);
+
+                p.bias += gain * innovation;
+                p.bias_cov = (Mat2::identity() - gain * Mat2::identity(-dt)) * p.bias_cov;
+
+                // Bias random walk, keeping the filter able to track slow changes.
+                p.bias_cov = p.bias_cov + Mat2::identity(config_.bias_walk * config_.bias_walk);
+                break;
+            }
+        }
     }
 }
 
@@ -71,8 +145,6 @@ void ParticleFilter::normalize_weights() {
     }
 
     if (!(sum > 0.0) || !std::isfinite(sum)) {
-        // Total collapse. Fall back to a uniform cloud so the run continues
-        // and the diagnostics show what happened.
         std::fill(lin_weights_.begin(), lin_weights_.end(), 1.0 / particles_.size());
         for (auto& p : particles_) p.log_weight = 0.0;
         return;
@@ -86,20 +158,20 @@ void ParticleFilter::normalize_weights() {
 }
 
 void ParticleFilter::refresh_estimate() {
-    double mx = 0.0;
-    double my = 0.0;
-    double sum_sq = 0.0;
+    double mx = 0.0, my = 0.0, bx = 0.0, by = 0.0, sum_sq = 0.0;
     for (std::size_t k = 0; k < particles_.size(); ++k) {
-        mx += lin_weights_[k] * particles_[k].x;
-        my += lin_weights_[k] * particles_[k].y;
-        sum_sq += lin_weights_[k] * lin_weights_[k];
+        const double w = lin_weights_[k];
+        mx += w * particles_[k].x;
+        my += w * particles_[k].y;
+        bx += w * particles_[k].bias.x;
+        by += w * particles_[k].bias.y;
+        sum_sq += w * w;
     }
     mean_x_ = mx;
     mean_y_ = my;
+    mean_bias_ = Vec2{bx, by};
     neff_ = (sum_sq > 0.0) ? 1.0 / sum_sq : 0.0;
 }
-
-double ParticleFilter::effective_sample_size() const { return neff_; }
 
 double ParticleFilter::spread() const {
     double var = 0.0;
@@ -107,6 +179,23 @@ double ParticleFilter::spread() const {
         const double dx = particles_[k].x - mean_x_;
         const double dy = particles_[k].y - mean_y_;
         var += lin_weights_[k] * (dx * dx + dy * dy);
+    }
+    return std::sqrt(std::max(0.0, var));
+}
+
+double ParticleFilter::bias_spread() const {
+    // Total marginal variance of the mixture: the spread between particle means
+    // plus, for the Rao-Blackwellised filter, each particle's own covariance.
+    // Ignoring the second term would badly understate the uncertainty, because
+    // most of it lives inside the per-particle Kalman filters.
+    double var = 0.0;
+    for (std::size_t k = 0; k < particles_.size(); ++k) {
+        const Vec2 d = particles_[k].bias - mean_bias_;
+        double term = d.x * d.x + d.y * d.y;
+        if (config_.mode == FilterMode::RaoBlackwellized) {
+            term += particles_[k].bias_cov.m00 + particles_[k].bias_cov.m11;
+        }
+        var += lin_weights_[k] * term;
     }
     return std::sqrt(std::max(0.0, var));
 }
@@ -139,9 +228,18 @@ void ParticleFilter::resample_if_needed() {
     // jitter the cloud collapses onto a handful of distinct points and can
     // never recover from an early mistake.
     std::normal_distribution<double> jitter(0.0, config_.roughening);
+    std::normal_distribution<double> bias_jitter(0.0, config_.bias_roughening);
     for (auto& p : particles_) {
         p.x += jitter(rng_);
         p.y += jitter(rng_);
+        // Only the bootstrap filter needs bias roughening: its bias lives in the
+        // sampled points, which deplete. The Rao-Blackwellised filter keeps its
+        // bias uncertainty in each particle's covariance, and jittering the
+        // means there would inject noise the Kalman recursion already accounts for.
+        if (config_.mode == FilterMode::Bootstrap4D) {
+            p.bias.x += bias_jitter(rng_);
+            p.bias.y += bias_jitter(rng_);
+        }
     }
 
     std::fill(lin_weights_.begin(), lin_weights_.end(), 1.0 / n);

@@ -84,6 +84,55 @@ ok=$(awk -v l="$loose" -v t="$tight" 'BEGIN{print (t <= l) ? 1 : 0}')
 [[ "$ok" == 1 ]] && pass "sigma 25 m -> ${loose} m error, sigma 1 m -> ${tight} m error" \
                  || fail "better sensor gave worse result (${loose} -> ${tight})"
 
+echo "9. every filter mode must still beat dead reckoning"
+for m in pf2d pf4d rbpf; do
+    out=$("$BIN" --filter $m --terrain ridged --duration 400 --dem-size 1600 --quiet)
+    pf=$(echo "$out" | awk '/terrain-aided final error/ {print $4}')
+    dr=$(echo "$out" | awk '/dead reckoning final error/ {print $5}')
+    ok=$(awk -v p="$pf" -v d="$dr" 'BEGIN{print (p < d/4) ? 1 : 0}')
+    [[ "$ok" == 1 ]] && pass "$m: ${pf} m vs dead-reckoned ${dr} m" \
+                     || fail "$m: ${pf} m vs dead-reckoned ${dr} m"
+done
+
+echo "10. Rao-Blackwellisation must beat the bootstrap at equal particle count"
+mean_bias() {   # mode, particles -> mean bias error over 6 seeds
+    local m=$1 n=$2 tot=0
+    for s in 1 2 3 4 5 6; do
+        local e
+        e=$("$BIN" --filter "$m" --particles "$n" --seed $s --terrain ridged \
+             --duration 400 --dem-size 1600 --quiet | awk '/bias error/{print $3}')
+        tot=$(awk -v t=$tot -v e="$e" 'BEGIN{print t+e}')
+    done
+    awk -v t=$tot 'BEGIN{printf "%.4f", t/6}'
+}
+b4=$(mean_bias pf4d 5000)
+br=$(mean_bias rbpf 5000)
+ok=$(awk -v a="$b4" -v b="$br" 'BEGIN{print (b < a/2) ? 1 : 0}')
+[[ "$ok" == 1 ]] && pass "5000 particles: bootstrap ${b4} m/s vs Rao-Blackwellised ${br} m/s" \
+                 || fail "5000 particles: bootstrap ${b4} m/s vs Rao-Blackwellised ${br} m/s"
+
+echo "11. Rao-Blackwellisation must beat the bootstrap using 20x fewer particles"
+br_small=$(mean_bias rbpf 1000)
+b4_big=$(mean_bias pf4d 20000)
+ok=$(awk -v a="$b4_big" -v b="$br_small" 'BEGIN{print (b < a) ? 1 : 0}')
+[[ "$ok" == 1 ]] && pass "rbpf@1000 ${br_small} m/s beats pf4d@20000 ${b4_big} m/s" \
+                 || fail "rbpf@1000 ${br_small} m/s vs pf4d@20000 ${b4_big} m/s"
+
+echo "12. a calibrated bias must make the solution coast better"
+coast() {
+    "$BIN" --filter "$1" --terrain mixed --dem-size 2000 --heading 0 \
+           --start 2000,30000 --duration 450 --quiet | awk '/coasted/{print $6}'
+}
+c2=$(coast pf2d)
+cr=$(coast rbpf)
+if [[ -z "$c2" || -z "$cr" ]]; then
+    fail "expected both modes to acquire and then lose a fix"
+else
+    ok=$(awk -v a="$c2" -v b="$cr" 'BEGIN{print (b < a) ? 1 : 0}')
+    [[ "$ok" == 1 ]] && pass "coast drift ${c2} m/s uncalibrated vs ${cr} m/s calibrated" \
+                     || fail "coast drift ${c2} m/s uncalibrated vs ${cr} m/s calibrated"
+fi
+
 echo
 if [[ $fails -eq 0 ]]; then echo "all checks passed"; else echo "$fails check(s) failed"; fi
 exit $fails

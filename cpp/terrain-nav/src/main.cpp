@@ -33,6 +33,13 @@ void print_usage(const char* argv0) {
         "  --baro-sigma X     barometric noise, m                  (default 9)\n"
         "  --ins-bias X       inertial velocity bias, m/s          (default 1.2)\n\n"
         "filter\n"
+        "  --filter MODE      pf2d | pf4d | rbpf                   (default pf2d)\n"
+        "                       pf2d  position only, bias absorbed into process noise\n"
+        "                       pf4d  bootstrap over (x,y,bx,by), brute-force baseline\n"
+        "                       rbpf  particles in (x,y) + a 2x2 Kalman filter per\n"
+        "                             particle for the bias (Rao-Blackwellised)\n"
+        "  --bias-prior X     initial bias uncertainty, m/s        (default 3)\n"
+        "  --bias-walk X      bias random walk, m/s per step       (default 0.004)\n"
         "  --particles N      particle count                       (default 5000)\n"
         "  --init-radius X    initial position uncertainty, m      (default 1500)\n"
         "  --meas-sigma X     assumed elevation noise, m           (default 10)\n"
@@ -84,7 +91,19 @@ int main(int argc, char** argv) {
         else if (arg == "--radar-sigma")   scenario.radar_sigma = std::atof(require_value(argc, argv, i));
         else if (arg == "--baro-sigma")    scenario.baro_sigma = std::atof(require_value(argc, argv, i));
         else if (arg == "--ins-bias")      scenario.ins_bias = std::atof(require_value(argc, argv, i));
+        else if (arg == "--bias-prior")    pf.bias_prior = std::atof(require_value(argc, argv, i));
+        else if (arg == "--bias-walk")     pf.bias_walk = std::atof(require_value(argc, argv, i));
         else if (arg == "--particles")     pf.count = std::atoi(require_value(argc, argv, i));
+        else if (arg == "--filter") {
+            const std::string v = require_value(argc, argv, i);
+            if      (v == "pf2d") pf.mode = FilterMode::Position2D;
+            else if (v == "pf4d") pf.mode = FilterMode::Bootstrap4D;
+            else if (v == "rbpf") pf.mode = FilterMode::RaoBlackwellized;
+            else {
+                std::cerr << "error: unknown filter '" << v << "' (pf2d, pf4d, rbpf)\n";
+                return 2;
+            }
+        }
         else if (arg == "--init-radius")   pf.init_radius = std::atof(require_value(argc, argv, i));
         else if (arg == "--meas-sigma")    pf.meas_sigma = std::atof(require_value(argc, argv, i));
         else if (arg == "--process-noise") pf.process_noise = std::atof(require_value(argc, argv, i));
@@ -143,11 +162,22 @@ int main(int argc, char** argv) {
                 << "  mean error while holding it  " << summary.mean_error_while_converged << " m\n"
                 << "  fix held for                 " << 100.0 * summary.fraction_converged
                 << " % of the flight\n";
+            if (pf.mode != FilterMode::Position2D) {
+                out << "  true inertial bias           (" << std::setprecision(3)
+                    << summary.true_bias.x << ", " << summary.true_bias.y << ") m/s\n"
+                    << "  estimated bias               (" << summary.final_est_bias.x
+                    << ", " << summary.final_est_bias.y << ") m/s\n"
+                    << "  bias error                   " << summary.final_bias_error
+                    << " m/s" << std::setprecision(1) << "\n";
+            }
             if (summary.lost_fix) {
                 out << "  LOST fix at                  " << summary.lost_fix_time
                     << " s, where local roughness was only " << summary.roughness_at_loss << " m\n"
                     << "  the map stopped being distinctive — this is an observability\n"
-                    << "  failure, not a filter bug\n";
+                    << "  failure, not a filter bug\n"
+                    << "  coasted                      " << summary.coast_seconds
+                    << " s afterwards, drifting " << std::setprecision(2)
+                    << summary.coast_drift_rate << " m/s" << std::setprecision(1) << "\n";
             }
         }
 

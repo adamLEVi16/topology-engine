@@ -18,7 +18,8 @@ double distance(double ax, double ay, double bx, double by) {
 }  // namespace
 
 NavSim::NavSim(const Dem& dem, const ScenarioConfig& scenario, const PfConfig& pf)
-    : dem_(dem), scenario_(scenario), filter_(pf, dem, scenario.seed ^ 0x9e3779b97f4a7c15ull) {
+    : dem_(dem), scenario_(scenario), pf_config_(pf),
+      filter_(pf, dem, scenario.seed ^ 0x9e3779b97f4a7c15ull) {
     altitude_ = dem_.max_elevation() + scenario_.clearance;
 }
 
@@ -30,23 +31,21 @@ RunSummary NavSim::run(std::ostream* log) {
     const double vx = scenario_.speed * std::cos(heading);
     const double vy = scenario_.speed * std::sin(heading);
 
-    // The inertial platform has a fixed, unknown velocity bias. This is what
-    // makes dead reckoning walk away linearly with time, and it is exactly the
-    // error terrain matching exists to bound.
+    // The inertial platform carries a fixed, unknown velocity bias. This is what
+    // makes dead reckoning walk away linearly with time, and it is exactly what
+    // the bias-estimating filter modes are trying to recover.
     const double bias_angle = unit(rng) * 3.0;
-    const double bias_x = scenario_.ins_bias * std::cos(bias_angle);
-    const double bias_y = scenario_.ins_bias * std::sin(bias_angle);
+    const Vec2 true_bias{scenario_.ins_bias * std::cos(bias_angle),
+                         scenario_.ins_bias * std::sin(bias_angle)};
 
     double true_x = scenario_.start_x;
     double true_y = scenario_.start_y;
 
-    // Both the dead-reckoned and terrain-aided solutions start from the same
-    // wrong guess, so the comparison is apples to apples.
+    // Dead reckoning and the filter start from the same wrong guess, so the
+    // comparison between them is apples to apples.
     std::uniform_real_distribution<double> offset(-1.0, 1.0);
-    const double init_err_x = offset(rng) * 400.0;
-    const double init_err_y = offset(rng) * 400.0;
-    double dr_x = true_x + init_err_x;
-    double dr_y = true_y + init_err_y;
+    double dr_x = true_x + offset(rng) * 400.0;
+    double dr_y = true_y + offset(rng) * 400.0;
 
     filter_.initialize(dr_x, dr_y);
 
@@ -54,17 +53,24 @@ RunSummary NavSim::run(std::ostream* log) {
     const auto steps = static_cast<long>(scenario_.duration / scenario_.dt);
     history_.reserve(static_cast<std::size_t>(steps));
 
+    const bool estimates_bias = pf_config_.mode != FilterMode::Position2D;
+
     if (log) {
         *log << std::fixed << std::setprecision(1);
         *log << "\n" << std::setw(8) << "t(s)" << std::setw(14) << "dead-reckon"
-             << std::setw(14) << "terrain-aided" << std::setw(12) << "spread"
-             << std::setw(10) << "N_eff" << std::setw(12) << "roughness" << "\n";
-        *log << std::setw(8) << "" << std::setw(14) << "error(m)"
-             << std::setw(14) << "error(m)" << std::setw(12) << "(m)"
-             << std::setw(10) << "" << std::setw(12) << "(m)" << "\n";
+             << std::setw(14) << "terrain-aided" << std::setw(11) << "spread"
+             << std::setw(10) << "N_eff" << std::setw(11) << "roughness";
+        if (estimates_bias) *log << std::setw(12) << "bias err";
+        *log << "\n" << std::setw(8) << "" << std::setw(14) << "error(m)"
+             << std::setw(14) << "error(m)" << std::setw(11) << "(m)"
+             << std::setw(10) << "" << std::setw(11) << "(m)";
+        if (estimates_bias) *log << std::setw(12) << "(m/s)";
+        *log << "\n";
     }
 
     RunSummary summary;
+    summary.true_bias = true_bias;
+
     double sum_below = 0.0;
     long count_below = 0;
     long consecutive_above = 0;
@@ -72,6 +78,7 @@ RunSummary NavSim::run(std::ostream* log) {
     double pending_fix_time = -1.0;
     double pending_loss_time = -1.0;
     double pending_loss_roughness = 0.0;
+    double error_at_loss = 0.0;
     // A fix has to persist to count. One lucky step inside the threshold is not
     // localisation, and over flat ground the wandering estimate will clip below
     // it now and then purely by chance.
@@ -81,7 +88,6 @@ RunSummary NavSim::run(std::ostream* log) {
     for (long step = 0; step < steps; ++step) {
         const double t = step * scenario_.dt;
 
-        // --- truth advances -------------------------------------------------
         if (step > 0) {
             true_x += vx * scenario_.dt;
             true_y += vy * scenario_.dt;
@@ -92,18 +98,16 @@ RunSummary NavSim::run(std::ostream* log) {
         }
 
         // --- inertial measurement -------------------------------------------
-        const double meas_vx = vx + bias_x + scenario_.ins_noise * unit(rng);
-        const double meas_vy = vy + bias_y + scenario_.ins_noise * unit(rng);
-        const double dx = meas_vx * scenario_.dt;
-        const double dy = meas_vy * scenario_.dt;
+        const Vec2 measured_velocity{vx + true_bias.x + scenario_.ins_noise * unit(rng),
+                                     vy + true_bias.y + scenario_.ins_noise * unit(rng)};
 
         if (step > 0) {
-            dr_x += dx;
-            dr_y += dy;
-            filter_.predict(dx, dy);
+            dr_x += measured_velocity.x * scenario_.dt;
+            dr_y += measured_velocity.y * scenario_.dt;
+            filter_.predict(measured_velocity, scenario_.dt);
         }
 
-        // --- terrain measurement --------------------------------------------
+        // --- terrain measurement ---------------------------------------------
         // A radar altimeter gives height above ground; a barometer gives height
         // above sea level. Their difference is the ground elevation underneath —
         // the single scalar per second that the whole filter runs on.
@@ -115,7 +119,7 @@ RunSummary NavSim::run(std::ostream* log) {
         filter_.update(ground_measured);
         filter_.resample_if_needed();
 
-        // --- bookkeeping -----------------------------------------------------
+        // --- bookkeeping ------------------------------------------------------
         StepRecord rec;
         rec.t = t;
         rec.true_x = true_x;
@@ -131,6 +135,9 @@ RunSummary NavSim::run(std::ostream* log) {
         rec.ground_truth = ground_truth;
         rec.ground_measured = ground_measured;
         rec.roughness = dem_.roughness(true_x, true_y, 1500.0);
+        rec.est_bias = filter_.mean_bias();
+        rec.bias_error = norm(rec.est_bias - true_bias);
+        rec.bias_spread = filter_.bias_spread();
         history_.push_back(rec);
 
         summary.max_dr_error = std::max(summary.max_dr_error, rec.dr_error);
@@ -154,8 +161,6 @@ RunSummary NavSim::run(std::ostream* log) {
             consecutive_below = 0;
             pending_fix_time = -1.0;
 
-            // Symmetrically, require a sustained excursion before calling the
-            // fix lost, so one bad measurement doesn't read as a failure.
             if (summary.ever_converged) {
                 if (consecutive_above == 0) {
                     pending_loss_time = t;
@@ -166,6 +171,7 @@ RunSummary NavSim::run(std::ostream* log) {
                     summary.lost_fix = true;
                     summary.lost_fix_time = pending_loss_time;
                     summary.roughness_at_loss = pending_loss_roughness;
+                    error_at_loss = rec.pf_error;
                 }
             }
         }
@@ -174,19 +180,35 @@ RunSummary NavSim::run(std::ostream* log) {
             *log << std::setw(8) << t
                  << std::setw(14) << rec.dr_error
                  << std::setw(14) << rec.pf_error
-                 << std::setw(12) << rec.spread
+                 << std::setw(11) << rec.spread
                  << std::setw(10) << std::setprecision(0) << rec.neff << std::setprecision(1)
-                 << std::setw(12) << rec.roughness << "\n";
+                 << std::setw(11) << rec.roughness;
+            if (estimates_bias) *log << std::setw(12) << std::setprecision(3)
+                                     << rec.bias_error << std::setprecision(1);
+            *log << "\n";
         }
     }
 
     if (history_.empty()) throw std::runtime_error("no steps ran — check the start position");
 
-    summary.final_pf_error = history_.back().pf_error;
-    summary.final_dr_error = history_.back().dr_error;
+    const StepRecord& last = history_.back();
+    summary.final_pf_error = last.pf_error;
+    summary.final_dr_error = last.dr_error;
+    summary.final_est_bias = last.est_bias;
+    summary.final_bias_error = last.bias_error;
     summary.mean_error_while_converged = count_below > 0 ? sum_below / count_below : 0.0;
     summary.fraction_converged =
         static_cast<double>(count_below) / static_cast<double>(history_.size());
+
+    // How fast the solution degrades once the terrain stops helping. This is the
+    // number bias calibration is supposed to improve: a filter that has solved
+    // the bias should coast far better than one that has not.
+    if (summary.lost_fix) {
+        summary.coast_seconds = last.t - summary.lost_fix_time;
+        if (summary.coast_seconds > 0.0) {
+            summary.coast_drift_rate = (last.pf_error - error_at_loss) / summary.coast_seconds;
+        }
+    }
     return summary;
 }
 
@@ -197,12 +219,13 @@ void write_history_csv(const std::vector<StepRecord>& history, const std::string
         return;
     }
     out << "t,true_x,true_y,dr_x,dr_y,pf_x,pf_y,dr_error,pf_error,spread,neff,"
-           "ground_truth,ground_measured,roughness\n";
-    out << std::fixed << std::setprecision(3);
+           "ground_truth,ground_measured,roughness,est_bias_x,est_bias_y,bias_error,bias_spread\n";
+    out << std::fixed << std::setprecision(4);
     for (const auto& r : history) {
         out << r.t << ',' << r.true_x << ',' << r.true_y << ',' << r.dr_x << ',' << r.dr_y
             << ',' << r.pf_x << ',' << r.pf_y << ',' << r.dr_error << ',' << r.pf_error
             << ',' << r.spread << ',' << r.neff << ',' << r.ground_truth << ','
-            << r.ground_measured << ',' << r.roughness << "\n";
+            << r.ground_measured << ',' << r.roughness << ',' << r.est_bias.x << ','
+            << r.est_bias.y << ',' << r.bias_error << ',' << r.bias_spread << "\n";
     }
 }

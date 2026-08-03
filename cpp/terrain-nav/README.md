@@ -179,22 +179,103 @@ Practical consequences, all of which fall straight out of this:
 6. Different seeds produce different runs
 7. The filter beats dead reckoning across 8 seeds, not just a lucky one
 8. A more precise altimeter never produces a worse fix
+9. All three filter modes beat dead reckoning by 4× or more
+10. Rao-Blackwellisation halves the bias error at equal particle count
+11. `rbpf` with 1,000 particles beats `pf4d` with 20,000
+12. Calibrating the bias measurably improves the coast after the fix is lost
 
 Current results: 600 s of flight, dead reckoning ends **497 m** out while the
 terrain-aided solution holds **16 m**, with a mean of 32 m once converged.
 
+## Calibrating the inertial unit
+
+Correcting position is only half of what terrain can buy you. The inertial unit
+has a constant velocity bias, and a filter that merely corrects position has to
+fight that bias forever. A filter that *estimates* it can zero the sensor error
+— and then keep coasting accurately long after the terrain stops helping.
+
+Note what is being estimated: a **velocity** bias, in m/s. A raw accelerometer
+bias would give velocity error growing as `t` and position error as `t²`. A
+velocity-level bias — what attitude and gyro error look like after one
+integration — gives position error linear in `t`. A full inertial error state
+would be 15 states; this is the useful simplification.
+
+Three modes, selectable with `--filter`:
+
+| Mode | State | Bias handling |
+|---|---|---|
+| `pf2d` | `(x, y)` | absorbed into process noise |
+| `pf4d` | `(x, y, bx, by)` | sampled — brute-force bootstrap |
+| `rbpf` | `(x, y)` + per-particle Kalman filter | marginalised analytically |
+
+### Why Rao-Blackwellisation applies
+
+The model is mixed linear/nonlinear, and terrain-aided navigation is the
+canonical example in the marginalised-particle-filter literature:
+
+```
+p_{k+1} = p_k + (v_meas − b_k)·dt + w_p     bias enters LINEARLY
+b_{k+1} = b_k + w_b
+z_k     = DEM(p_k) + e_k                     measurement ignores b entirely
+```
+
+Because `z` never touches `b`, the terrain cannot update the bias directly. The
+bias is instead observed through the **sampled displacement**: once a particle
+draws its step, that realised step is a linear measurement of the bias with
+`H = −dt·I`, so each particle runs an exact 2×2 Kalman update. Particles whose
+bias estimate is wrong take steps that carry them off terrain-consistent ground
+and die at resampling.
+
+So the particles only ever search the two genuinely non-linear dimensions, and
+the two linear ones are integrated out in closed form.
+
+### Measured results
+
+Mean bias error over 8 seeds, 400 s of flight over ridged terrain:
+
+| Filter | Particles | Mean bias error | Worst seed |
+|---|---|---|---|
+| `pf4d` | 1,000 | 2.363 m/s | 4.863 m/s |
+| `pf4d` | 5,000 | 0.724 m/s | 1.062 m/s |
+| `pf4d` | 20,000 | 0.356 m/s | 0.744 m/s |
+| `pf4d` | 40,000 | 0.246 m/s | 0.675 m/s |
+| **`rbpf`** | **1,000** | **0.114 m/s** | **0.273 m/s** |
+| `rbpf` | 5,000 | 0.118 m/s | 0.214 m/s |
+
+The Rao-Blackwellised filter with **1,000** particles is more than twice as
+accurate as the bootstrap with **40,000** — a 40× reduction that extrapolates to
+well over 100× to actually match it. It also runs marginally *faster* at equal
+particle count, because sharper weights mean fewer resampling events.
+
+Note too that `rbpf` is flat from 1,000 to 5,000 particles: it has already hit
+the information limit of the measurements. Adding particles cannot help, because
+the bias uncertainty is being integrated analytically rather than sampled. That
+is the Rao-Blackwell variance-reduction theorem showing up as a flat line.
+
+The bootstrap at 1,000 particles is worse than its own 3 m/s prior — with four
+dimensions to cover, the cloud simply cannot span the space, and it diverges.
+
+### What calibration buys: the coast test
+
+Fly from ridged terrain onto a plain, lose the fix, and keep going on inertial
+alone (`--terrain mixed`, 60 km map, 450 s):
+
+| Filter | Bias error | Coast drift rate | Final position error |
+|---|---|---|---|
+| `pf2d` | not estimated | 0.79 m/s | 244.7 m |
+| `pf4d` | 0.530 m/s | 0.58 m/s | 125.6 m |
+| `rbpf` | 0.119 m/s | **0.32 m/s** | **59.6 m** |
+
+Same terrain, same sensors, same particle count. The only difference is how well
+the inertial bias was solved while the terrain was still informative — and it
+shows up as a 2.5× slower error growth and a 4× better final position once the
+terrain has gone quiet. That is the entire argument for co-estimating the bias.
+
 ## Where this would go next
 
-- **Estimate the inertial bias.** Extend the state to `(x, y, bias_x, bias_y)`.
-  Right now the bias is absorbed into process noise, which works but throws away
-  the filter's ability to *calibrate* the inertial unit — the thing that makes
-  the solution keep coasting accurately after terrain runs out.
 - **A real correlation stage.** Classic TERCOM correlates a whole batch of
   profile samples at once rather than filtering sample by sample. More robust
   for initial acquisition from a cold start.
-- **Rao-Blackwellisation.** Keep particles only for the non-linear horizontal
-  states and run an analytic Kalman update for the linear ones. Far fewer
-  particles for the same accuracy.
 - **Terrain slope in the likelihood.** A measurement taken on a steep slope is
   much more informative than one on a flat bench; weighting by local gradient
   sharpens convergence.
