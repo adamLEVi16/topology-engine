@@ -144,7 +144,18 @@ void ParticleFilter::update(double measured_ground_elevation) {
             variance += map_v_var + (g.x * g.x + g.y * g.y) * map_h_var;
         }
 
-        const double innovation = measured_ground_elevation - dem_.elevation(qx, qy);
+        const double map_elevation = dem_.elevation(qx, qy);
+        if (!std::isfinite(map_elevation) || !std::isfinite(variance)) {
+            // A corrupt map (bad weights, truncated file) would otherwise put a
+            // NaN into log_weight. std::max propagates the other operand past a
+            // NaN, so max_lw stays -inf, every exp() returns NaN, and the
+            // normalisation guard silently resets to a uniform cloud — a wrecked
+            // filter that still reports plausible numbers. Count it instead.
+            ++nonfinite_queries_;
+            p.log_weight += -50.0;
+            continue;
+        }
+        const double innovation = measured_ground_elevation - map_elevation;
 
         // The -0.5*log(variance) term is NOT optional once the variance varies
         // per particle. With a constant sigma it is a shared constant that

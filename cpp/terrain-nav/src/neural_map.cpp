@@ -38,6 +38,25 @@ NeuralMap NeuralMap::load(const std::string& path) {
     map.z_scale_  = read_pod<float>(in, path);
     map.z_offset_ = read_pod<float>(in, path);
 
+    // The file is a raw little-endian dump, so a big-endian reader would load
+    // byte-swapped garbage and navigate against a scrambled network without ever
+    // reporting an error. Byte-swapping a plausible extent or scale almost always
+    // produces a denormal, a huge value, or a NaN, so validating the header
+    // catches the mismatch at load time instead of silently at altitude.
+    const bool header_sane =
+        std::isfinite(map.extent_x_) && std::isfinite(map.extent_y_) &&
+        std::isfinite(map.x_scale_)  && std::isfinite(map.y_scale_)  &&
+        std::isfinite(map.z_scale_)  && std::isfinite(map.z_offset_) &&
+        map.extent_x_ > 1.0 && map.extent_x_ < 1e9 &&
+        map.extent_y_ > 1.0 && map.extent_y_ < 1e9 &&
+        map.x_scale_  > 1e-6 && map.y_scale_ > 1e-6 && map.z_scale_ > 1e-6;
+    if (!header_sane) {
+        throw std::runtime_error(
+            path + ": header values are implausible. The format is little-endian "
+                   "float32; this usually means the file is byte-swapped, truncated, "
+                   "or not a SIREN map at all.");
+    }
+
     const auto n_layers = read_pod<std::int32_t>(in, path);
     if (n_layers < 1 || n_layers > 32) {
         throw std::runtime_error(path + ": implausible layer count");

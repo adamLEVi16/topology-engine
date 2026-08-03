@@ -214,6 +214,57 @@ else
     echo "19. neural map checks skipped (set SIREN=path/to/map.siren to enable)"
 fi
 
+echo "20. bicubic must be safe at and beyond the map edges"
+# The 4x4 Catmull-Rom footprint reaches ix-1 and ix+2, so an unclamped lookup
+# would read outside the array one cell from the boundary.
+edge_ok=1
+for pt in 0,0 -500,-500 5970,5970 99999,99999 0,5970; do
+    out=$("$BIN" --dem-size 200 --dem-spacing 30 --map-interp bicubic --probe "$pt" 2>&1)
+    v=$(echo "$out" | awk '/^elevation  /{print $2}' | tail -1)
+    ok=$(awk -v v="$v" 'BEGIN{print (v+0==v && v>0 && v<100000) ? 1 : 0}')
+    [[ "$ok" == 1 ]] || { edge_ok=0; echo "      bad value at $pt: $v"; }
+done
+[[ "$edge_ok" == 1 ]] && pass "corners and out-of-range queries return finite elevations" \
+                      || fail "bicubic produced a bad value at a map edge"
+
+echo "21. conflicting map sources must be rejected, not silently resolved"
+conf_ok=1
+for pair in "--error-amplitude 20 --map-downsample 8" \
+            "--error-amplitude 20 --map-interp bicubic"; do
+    if "$BIN" --dem-size 200 --duration 1 --quiet $pair > /dev/null 2>&1; then
+        conf_ok=0; echo "      accepted: $pair"
+    fi
+done
+[[ "$conf_ok" == 1 ]] && pass "combined map options exit non-zero with an explanation" \
+                      || fail "a conflicting map combination was silently accepted"
+
+echo "22. a corrupt neural map must be refused, not navigated against"
+if [[ -n "${SIREN:-}" && -f "${SIREN:-}" ]]; then
+    tmp=$(mktemp -d)
+    # Byte-swap every word after the magic: what a big-endian reader would see.
+    python3 - "$SIREN" "$tmp/swapped.siren" <<'PY'
+import sys
+d = open(sys.argv[1], "rb").read()
+out = bytearray(d[:8]); body = d[8:]
+for i in range(0, len(body) - len(body) % 4, 4):
+    out += body[i:i+4][::-1]
+open(sys.argv[2], "wb").write(bytes(out))
+PY
+    head -c 40 "$SIREN" > "$tmp/trunc.siren"
+    corrupt_ok=1
+    for f in "$tmp/swapped.siren" "$tmp/trunc.siren"; do
+        "$BIN" --dem-size 200 --neural "$f" --probe 100,100 > /dev/null 2>&1 && {
+            corrupt_ok=0; echo "      accepted corrupt file: $(basename "$f")"; }
+    done
+    "$BIN" --dem-size 200 --neural "$SIREN" --probe 100,100 > /dev/null 2>&1 || {
+        corrupt_ok=0; echo "      rejected a VALID file"; }
+    rm -rf "$tmp"
+    [[ "$corrupt_ok" == 1 ]] && pass "byte-swapped and truncated maps refused, valid map accepted" \
+                             || fail "corrupt neural map handling is wrong"
+else
+    echo "  SKIP  set SIREN=path/to/map.siren to enable"
+fi
+
 echo
 if [[ $fails -eq 0 ]]; then echo "all checks passed"; else echo "$fails check(s) failed"; fi
 exit $fails

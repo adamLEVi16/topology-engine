@@ -83,6 +83,9 @@ public:
     // Weighted mean of the per-particle measurement sigma actually used on the
     // last update — flat where the ground is flat, inflated on slopes.
     double mean_effective_sigma() const { return mean_eff_sigma_; }
+    // Non-zero means the map returned NaN or infinity — the map is corrupt, and
+    // any result from this run should be discarded rather than interpreted.
+    long nonfinite_queries() const { return nonfinite_queries_; }
 
     const std::vector<Particle>& particles() const { return particles_; }
     const std::vector<double>& weights() const { return lin_weights_; }
@@ -104,5 +107,6 @@ private:
     Vec2   mean_bias_;
     double neff_ = 0.0;
     double mean_eff_sigma_ = 0.0;
+    long   nonfinite_queries_ = 0;
     bool   resampled_ = false;
 };

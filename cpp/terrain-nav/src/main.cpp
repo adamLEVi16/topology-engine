@@ -200,6 +200,27 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Exactly one thing may define the stored map. Silently letting one option
+    // win would hand back plausible numbers for an experiment nobody ran, which
+    // in a measurement harness is worse than crashing.
+    {
+        int sources = 0;
+        std::string named;
+        if (!neural_path.empty())   { ++sources; named += " --neural"; }
+        if (err_amplitude > 0.0)    { ++sources; named += " --error-amplitude"; }
+        if (map_downsample > 1)     { ++sources; named += " --map-downsample"; }
+        if (sources > 1) {
+            std::cerr << "error: conflicting map sources:" << named
+                      << "\n       pick one — they cannot be combined.\n";
+            return 2;
+        }
+        if (map_interp == Dem::Interp::Bicubic && (!neural_path.empty() || err_amplitude > 0.0)) {
+            std::cerr << "error: --map-interp applies to grid maps only, "
+                         "not --neural or --error-amplitude\n";
+            return 2;
+        }
+    }
+
     try {
         // For a real tile, only override the spacing if the user actually asked;
         // otherwise let the loader derive it from the filename's latitude.
