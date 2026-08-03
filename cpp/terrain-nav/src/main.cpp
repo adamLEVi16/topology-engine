@@ -11,6 +11,7 @@
 
 #include "dem.hpp"
 #include "neural_map.hpp"
+#include "perturbed_map.hpp"
 #include "navsim.hpp"
 #include "particle_filter.hpp"
 #include "render.hpp"
@@ -37,6 +38,10 @@ void print_usage(const char* argv0) {
         "  --map-downsample N degrade the stored map by factor N   (default 1)\n"
         "  --map-interp MODE  bilinear | bicubic                    (default bilinear)\n"
         "  --neural PATH      navigate against a trained SIREN instead of a grid\n"
+        "  --error-amplitude X  inject synthetic map error, RMS metres     (default 0)\n"
+        "  --error-wavelength X spatial scale of the injected error, m     (default 500)\n"
+        "  --error-aspect X     stretch error along x by X, along y by 1/X (default 1)\n"
+        "  --error-seed N       injected error field seed                  (default 11)\n"
         "  --dump-dem PATH    write the truth grid as raw float32 and exit\n"
         "  --map-rmse         report map fidelity vs truth (elevation + gradient), then exit\n"
         "  --bench-map N      time N elevation and gradient queries, then exit\n"
@@ -94,6 +99,8 @@ int main(int argc, char** argv) {
     double relief = 900.0;
     int map_downsample = 1;
     Dem::Interp map_interp = Dem::Interp::Bilinear;
+    double err_amplitude = 0.0, err_wavelength = 500.0, err_aspect = 1.0;
+    unsigned err_seed = 11;
     std::string neural_path, dump_path;
     double probe_x = 0.0, probe_y = 0.0;
     bool do_probe = false;
@@ -123,6 +130,10 @@ int main(int argc, char** argv) {
         else if (arg == "--relief")        relief = std::atof(require_value(argc, argv, i));
         else if (arg == "--gradient-inflation") pf.inflate_on_gradient = true;
         else if (arg == "--neural")        neural_path = require_value(argc, argv, i);
+        else if (arg == "--error-amplitude")  err_amplitude = std::atof(require_value(argc, argv, i));
+        else if (arg == "--error-wavelength") err_wavelength = std::atof(require_value(argc, argv, i));
+        else if (arg == "--error-aspect")     err_aspect = std::atof(require_value(argc, argv, i));
+        else if (arg == "--error-seed")       err_seed = static_cast<unsigned>(std::atoi(require_value(argc, argv, i)));
         else if (arg == "--dump-dem")      dump_path = require_value(argc, argv, i);
         else if (arg == "--map-rmse")      do_rmse = true;
         else if (arg == "--dump-map")      dump_map_path = require_value(argc, argv, i);
@@ -226,9 +237,15 @@ int main(int argc, char** argv) {
         // decimated, re-interpolated, or replaced by a neural field entirely.
         std::unique_ptr<Dem> grid_map;
         std::unique_ptr<NeuralMap> neural;
+        std::unique_ptr<PerturbedMap> perturbed;
         const TerrainMap* map_ptr = nullptr;
 
-        if (!neural_path.empty()) {
+        if (err_amplitude > 0.0) {
+            // Wraps the exact truth grid, so injected error is the only difference.
+            perturbed = std::make_unique<PerturbedMap>(dem, err_amplitude, err_wavelength,
+                                                       err_aspect, err_seed);
+            map_ptr = perturbed.get();
+        } else if (!neural_path.empty()) {
             neural = std::make_unique<NeuralMap>(NeuralMap::load(neural_path));
             map_ptr = neural.get();
         } else {
