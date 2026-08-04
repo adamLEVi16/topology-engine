@@ -153,10 +153,10 @@ arc in one run:
 
 ```
    t(s)   dead-reckon terrain-aided      spread   roughness
-   40.0         191.8           8.4        53.2        19.6     <- locked on
-  140.0         166.4          43.7        63.1         8.9     <- terrain fading
-  200.0         190.5          84.2       140.1         0.9     <- nothing to see
-  279.0         251.9         186.7       202.6         0.5     <- fix lost
+   40.0         443.5          17.5        63.2        19.6     <- locked on
+  140.0         385.4          27.4        61.6         8.9     <- terrain fading
+  200.0         363.0          99.9       141.5         0.9     <- nothing to see
+  279.0         355.8         172.2       198.7         0.5     <- fix lost
 ```
 
 Error and spread grow together as roughness collapses. The filter does not fail
@@ -192,6 +192,21 @@ Practical consequences, all of which fall straight out of this:
 13. A uniform map shift biases the fix by ‖shift‖ without costing confidence
 14. Gradient inflation improves accuracy when map error correlates with slope
 15. Gradient inflation does not degrade a run against an exact map
+16. Bicubic reconstructs better than bilinear from the same bytes
+17. Analytic gradients match central differences, both interpolants
+18. Bicubic reduces navigation tail risk on a degraded map
+19. Neural map gradients match central differences (needs `SIREN=`)
+20. Bicubic is safe at and beyond the map edges
+21. Conflicting map sources are rejected, not silently resolved
+22. Byte-swapped and truncated neural maps are refused (needs `SIREN=`)
+23. Reusing a simulator reproduces the first run exactly
+24. A void-heavy `.hgt` does not manufacture sea-level terrain
+25. The bias-update covariance stays non-singular at extreme settings
+26. Non-finite and malformed numeric arguments are rejected
+27. Valid arguments — including negatives and zero — are still accepted
+28. The `N_eff` diagnostic can report below the resample threshold
+29. Neural maps whose layer widths do not chain, or whose `omega` is a
+    denormal, are refused rather than navigated against
 
 Current results: 600 s of flight, dead reckoning ends **463 m** out while the
 terrain-aided solution holds **24 m**, with a mean of 31 m once converged.
@@ -341,28 +356,41 @@ grid is badly wrong on steep ground and nearly right on flat ground, so particle
 over rough terrain are systematically punished and the filter drifts toward flat
 areas — precisely where there is no information.
 
-Truth on a 30 m grid, filter navigating a decimated copy, 8 seeds per cell:
+Truth on a 30 m grid, filter navigating a decimated copy. Each cell pools
+**4 terrain realisations × 6 flight seeds = 24 runs**; "diverged" is a final
+error over 300 m.
 
-| Map | Inflation off (median / worst) | Inflation on (median / worst) |
+| Map | Inflation off (median / worst / div) | Inflation on (median / worst / div) |
 |---|---|---|
-| exact | 6.8 m / 12.1 m | 6.0 m / 9.8 m |
-| 4× coarse | 50.5 m / 61.4 m | 44.1 m / 55.0 m |
-| 8× coarse | 48.2 m / **4682.8 m** | 36.5 m / 46.2 m |
-| 12× coarse | 52.6 m / 88.7 m | 42.0 m / 58.8 m |
-| 16× coarse | **64.6 m** / 84.6 m | 75.6 m / 132.3 m |
+| exact | 8.4 m / 30.5 m / 0/24 | 8.8 m / 20.4 m / 0/24 |
+| 4× coarse | 21.2 m / 66.0 m / 0/24 | 19.1 m / 63.2 m / 0/24 |
+| 8× coarse | 60.8 m / 139.9 m / **0/24** | **45.9 m** / 14 865 m / 1/24 |
+| 12× coarse | 86.5 m / 161.0 m / **0/24** | **57.0 m** / 6 290 m / 7/24 |
+| 16× coarse | **115.0 m** / 19 041 m / 5/24 | 231.9 m / 7 238 m / 12/24 |
 
-At 8× coarse across 24 seeds: 1/24 runs diverged catastrophically without
-inflation versus 0/24 with, mean error 252 m versus 41 m, worst case 4683 m
-versus 60 m.
+**Inflation buys median accuracy and pays for it in the tail.** In the middle
+band it improves the typical run substantially — 8× coarse from 60.8 m to 45.9 m,
+12× from 86.5 m to 57.0 m, both around a 25–35% median gain. Over the same runs
+it takes the divergence count from 0/24 to 1/24 at 8× and from 0/24 to 7/24 at
+12×, and the worst case from 161 m to 6 290 m.
 
-Read honestly, that is a **~15–25 % median improvement and a large reduction in
-tail risk**, not a rescue from certain death. A 1-versus-0 divergence count over
-24 seeds carries no statistical weight by itself; the mean and worst case are
-what actually carry the result.
+An earlier version of this section reported the opposite — "a large reduction in
+tail risk", from a single 4 683 m outlier in the no-inflation column at 8×. That
+outlier was one terrain. Pooled over four, the no-inflation column at 8× and 12×
+does not diverge at all and the inflated column does. This is the same failure
+mode as the withdrawn wavelength result: a tail statistic read off one
+realisation, which is precisely where a single realisation says least.
+
+The mechanism is not mysterious. Inflating variance on steep ground deliberately
+discards the most informative measurements the filter has. On average that is
+worth it, because those measurements are also the ones the coarse map gets most
+wrong. But it widens the likelihood exactly where the terrain was doing the work,
+so when a run is going badly the filter has given away its means of recovery.
 
 ### Finding 3: inflation backfires when the map is too coarse to differentiate
 
-At 16× the effect reverses — inflation is *worse* (75.6 m versus 64.6 m median).
+At 16× the effect reverses outright — inflation is worse on the median (231.9 m
+versus 115.0 m) and more than doubles the divergence count (12/24 versus 5/24).
 The mechanism is self-inflicted: the gradient is computed from the degraded map,
 so once the map is too coarse to represent the real slope, the filter is
 inflating variance according to a gradient that is itself wrong, and throwing
@@ -370,7 +398,9 @@ away good measurements for no reason.
 
 Gradient inflation is therefore useful over a **middle band** of map quality —
 degraded enough that slope-correlated error matters, accurate enough that the
-slope estimate is still meaningful.
+slope estimate is still meaningful — and even there it is a median-versus-tail
+trade rather than a free improvement. `validate.sh` check 14 pins the median
+effect only; nothing currently guards the tail.
 
 ## Does the map have to be a grid?
 
@@ -509,24 +539,40 @@ what does. Comparing whole representations confounds many properties at once, so
 whose amplitude, spatial scale, and anisotropy can be varied one at a time.
 
 `error_injection.sh` runs the three sweeps: exact 1000×1000 grid at 30 m, ridged
-terrain, flight due east, marginalised filter, no gradient inflation, 12 seeds
-per cell. Sensor noise is 9.5 m throughout.
+terrain, flight due east, marginalised filter, no gradient inflation. Sensor
+noise is 9.5 m throughout.
+
+Each cell pools **8 realisations of the injected error field × 12 flight seeds =
+96 runs**. That distinction is the whole reason these numbers are trustworthy and
+the previous ones were not. An earlier version varied only the flight seed —
+sensor noise, INS bias, start offset — while leaving the error field itself at a
+single fixed realisation. Every cell therefore measured one particular error
+field's quirks. The swing that produced across wavelength was *smaller* than the
+swing across error fields at a single fixed wavelength, meaning the sweep was
+reporting the realisation rather than the axis. The headline result it supported
+did not survive pooling and has been withdrawn below.
 
 ### Amplitude — how much error can it absorb?
 
 | Injected | Map RMSE | Nav median | Diverged | Worst |
 |---|---|---|---|---|
-| 0 m (control) | 0.0 m | 15.8 m | 0/12 | 25.2 m |
-| 5 m | 5.0 m | 20.4 m | 0/12 | 32.3 m |
-| 10 m | 10.0 m | 25.4 m | 0/12 | 51.0 m |
-| 20 m | 19.9 m | 50.5 m | 0/12 | 79.0 m |
-| 40 m | 39.8 m | 174.9 m | **4/12** | 5 275 m |
-| 80 m | 79.7 m | 536.3 m | **9/12** | 1 958 m |
+| 0 m (control) | 0.0 m | 12.9 m | 0/12 | 19.2 m |
+| 5 m | 5.0 m | 11.9 m | 0/96 | 37.0 m |
+| 10 m | 10.0 m | 17.1 m | 1/96 | 1 825 m |
+| 20 m | 19.9 m | 38.0 m | 8/96 | 2 427 m |
+| 40 m | 39.8 m | 566.3 m | **60/96** | 5 547 m |
+| 80 m | 79.7 m | 2 112 m | **90/96** | 7 607 m |
 
-Clean and monotonic, with a sharp knee. The filter absorbs map error up to about
-**twice the sensor noise** with only graceful degradation, and the breakdown sits
-between 20 m and 40 m — roughly **2× to 4× sensor noise**. Below that it fails
-gradually; above it, it fails catastrophically.
+(The control row is 12 runs, not 96: with no error injected the field is never
+constructed, so the eight error seeds would be eight copies of the same flight.)
+
+This one survives pooling, and gets sharper. The filter absorbs map error up to
+about **twice the sensor noise** with only graceful degradation, and the
+breakdown sits between 20 m and 40 m — roughly **2× to 4× sensor noise**.
+
+The failure above the knee is worse than the single-realisation sweep suggested:
+40 m of injected error diverges in **63%** of runs, not the 33% previously
+recorded. The knee is a cliff.
 
 ### Spatial scale — misplaced hills, or fake boulders?
 
@@ -534,28 +580,35 @@ Amplitude fixed at 20 m, so **every row has identical map RMSE**.
 
 | Wavelength | Map RMSE | Nav median | Diverged | Worst |
 |---|---|---|---|---|
-| 100 m | 20.0 m | 27.5 m | 1/12 | 1 841 m |
-| 250 m | 19.9 m | **76.5 m** | 0/12 | 89.2 m |
-| 500 m | 19.9 m | 50.5 m | 0/12 | 79.0 m |
-| 1 000 m | 19.9 m | 26.8 m | 1/12 | 2 242 m |
-| 2 500 m | 20.0 m | **17.2 m** | 0/12 | 46.5 m |
-| 5 000 m | 19.9 m | 20.4 m | 1/12 | 2 365 m |
+| 100 m | 20.0 m | 32.1 m | 3/96 | 4 905 m |
+| 250 m | 19.9 m | 29.8 m | 4/96 | 3 271 m |
+| 500 m | 19.9 m | 38.0 m | 8/96 | 2 427 m |
+| 1 000 m | 19.9 m | 28.2 m | **15/96** | 6 785 m |
+| 2 500 m | 20.0 m | 24.0 m | **14/96** | 4 440 m |
+| 5 000 m | 19.9 m | 25.6 m | 9/96 | 3 956 m |
 
-**This is the result.** The same RMS error is **4.5× more damaging at 250 m than
-at 2 500 m**, and the dependence is not monotonic — it peaks in a middle band.
-At 2 500 m the injected error is almost free: 17.2 m against a perfect-map
-control of 15.8 m.
+**A previous version of this section called a result here. It was wrong.** It
+reported that the same RMS error was 4.5× more damaging at 250 m than at 2 500 m,
+peaking in a middle band, and that long-wavelength error was almost free. Pooled
+over error-field realisations, none of that holds:
 
-So neither extreme is the problem. Fake boulders average out; a misplaced
-mountain is nearly harmless. What hurts is error at an intermediate scale.
+- The medians span 24–38 m across a **50× range of wavelength** — a 1.6× swing,
+  and not monotonic in any direction that means anything. The 250 m "peak" of
+  76.5 m was one error field; pooled it is 29.8 m.
+- The divergence counts run the *other* way. Long-wavelength error fails
+  catastrophically **more** often, not less: 15/96 at 1 000 m and 14/96 at
+  2 500 m against 3/96 at 100 m. The claim that at 2 500 m the injected error is
+  "almost free" is the reverse of what the pooled data shows.
 
-The reading consistent with the earlier uniform-shift result is that
-long-wavelength error is **common-mode** across the particle cloud, and
-log-sum-exp cancels common offsets exactly; short-wavelength error decorrelates
-within the cloud and behaves like extra white noise the sensor model already
-tolerates; only intermediate-scale error varies coherently *across* the cloud in
-a way that differentially misweights particles. That is interpretation, not
-measurement — what is measured is the 4.5× swing at fixed RMSE.
+What is left is narrower and splits median from tail: **at fixed RMSE the spatial
+scale of map error barely moves the typical run, but long-wavelength error
+roughly triples the rate of catastrophic failure.** That is consistent with the
+common-mode argument only in the median — a slowly varying error does cancel in
+the log-sum-exp for a converged cloud — while saying something the earlier
+reading missed. A long-wavelength error that happens to be locally steep biases
+the whole cloud coherently in one direction, and there is no internal signal to
+catch it, which is exactly the uniform-shift failure mode from Finding 1 arriving
+by another route. Common-mode is not the same as harmless.
 
 ### Isotropy — along-track versus cross-track
 
@@ -563,28 +616,48 @@ Amplitude 20 m, nominal wavelength 500 m, geometric mean held fixed.
 
 | Aspect | λ along-track | λ cross-track | Nav median | Diverged |
 |---|---|---|---|---|
-| 0.125× | 177 m | 1 414 m | 10.6 m | 0/12 |
-| 0.25× | 250 m | 1 000 m | 39.6 m | 2/12 |
-| 0.5× | 354 m | 707 m | 67.5 m | 4/12 |
-| 1× | 500 m | 500 m | 50.5 m | 0/12 |
-| 2× | 707 m | 354 m | 22.2 m | 0/12 |
-| 4× | 1 000 m | 250 m | 87.4 m | 0/12 |
-| 8× | 1 414 m | 177 m | 47.1 m | 4/12 |
+| 0.125× | 177 m | 1 414 m | 26.6 m | 7/96 |
+| 0.25× | 250 m | 1 000 m | **60.5 m** | **39/96** |
+| 0.5× | 354 m | 707 m | 54.6 m | 5/96 |
+| 1× | 500 m | 500 m | 38.0 m | 8/96 |
+| 2× | 707 m | 354 m | 22.8 m | 2/96 |
+| 4× | 1 000 m | 250 m | **18.4 m** | **0/96** |
+| 8× | 1 414 m | 177 m | 27.1 m | 9/96 |
 
-**No reliable directional effect was detected, and this sweep is confounded.**
-Changing the aspect ratio necessarily changes both wavelengths, and the previous
-sweep showed navigation is strongly and non-monotonically sensitive to
-wavelength — so most of the variation here is explainable by the along-track and
-cross-track scales moving through the damaging middle band, not by anisotropy
-itself. The medians do not trend with direction, and the divergence counts point
-the opposite way from the medians at 0.25× versus 4×.
+This sweep was previously reported as showing no reliable directional effect,
+with medians and divergence counts pointing opposite ways. Pooled, they agree,
+and there is a clear effect.
 
-The one weak hint is that the two cells with a 250 m component behave
-differently depending on its orientation — 87.4 m median when it is cross-track
-against 39.6 m when along-track — but with 12 seeds and divergence counts running
-counter to the medians, that is not separable from noise. Answering this properly
-needs a design that holds both wavelengths fixed and rotates the error field
-instead, which is not what was built here.
+Changing the aspect ratio necessarily changes both wavelengths, so the trend down
+the table is still confounded. But the design contains its own control: rows
+equidistant from 1× carry the **same pair of wavelengths with the axes swapped**,
+so comparing them isolates orientation alone.
+
+| Wavelength pair | Short axis along-track | Short axis cross-track |
+|---|---|---|
+| {250 m, 1 000 m} | **60.5 m, 39/96** | **18.4 m, 0/96** |
+| {354 m, 707 m} | 54.6 m, 5/96 | 22.8 m, 2/96 |
+| {177 m, 1 414 m} | 26.6 m, 7/96 | 27.1 m, 9/96 |
+
+**Error that varies rapidly along the direction of flight is far more damaging
+than the same error varying equally rapidly across it** — 60.5 m and 39 divergences
+against 18.4 m and none, from the identical error field rotated 90°.
+
+The mechanism follows from what the filter actually measures. It matches a
+*profile* sampled along its own track, so error that cycles along that track
+corrupts successive samples differently and injects a spurious wiggle into the
+very signal being matched. Error that varies across-track is nearly constant
+along any one path, so it behaves like a slowly varying common-mode offset and
+largely cancels.
+
+Note the third row: at 177 m the orientation stops mattering. Below roughly
+200 m — a couple of flight-seconds at 120 m/s — the along-track error decorrelates
+between successive samples and averages out like extra sensor noise. The
+directional effect needs the error to persist across several samples but not the
+whole flight.
+
+That is one sweep, and the paired comparison rests on three cells. It is a
+hypothesis with supporting evidence, not a settled mechanism.
 
 ## Where this would go next
 

@@ -26,8 +26,16 @@ cell() {   # error args... -> "median diverged worst"
     # /tmp. mktemp gives a unique name and safe permissions.
     local tmp
     tmp=$(mktemp "${TMPDIR:-/tmp}/terrainnav.XXXXXX") || return 1
+    # At amplitude 0 no error field is constructed at all, so --error-seed is
+    # inert and every realisation would re-run an identical flight. Counting
+    # those as separate samples would inflate the control row's denominator by
+    # |ERROR_SEEDS| against rows that genuinely vary, making the one row used as
+    # the baseline look the most thoroughly sampled when it is the least.
+    local es_list="$ERROR_SEEDS"
+    case " $* " in *" --error-amplitude 0 "*) es_list=${ERROR_SEEDS%% *} ;; esac
+
     local vals=""
-    for es in $ERROR_SEEDS; do
+    for es in $es_list; do
         for s in $SEEDS; do
             vals="$vals $("$BIN" $WORLD "$@" --error-seed "$es" $FLIGHT --seed "$s" \
                           | awk '/terrain-aided final error/{print $4}')"
