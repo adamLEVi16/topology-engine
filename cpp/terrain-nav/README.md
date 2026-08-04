@@ -61,16 +61,18 @@ much of the US), or SRTM `.hgt` tiles, which this reads directly.
 
 ```
     t(s)   dead-reckon terrain-aided     spread     N_eff  roughness
-     0.0         166.4         827.5      868.3      5000       94.6
-    20.0         182.4          24.6       42.8      1877       53.8
+              error(m)      error(m)        (m)                  (m)
+     0.0         472.1         465.8     1195.8      1394       32.4
+    20.0         456.5          38.6       63.2      3762       31.3
    ...
-   599.0         462.8          23.5       47.5      2331       76.5
+   500.0         455.4           9.8       60.4      3340       24.5
 
 result
   dead reckoning final error   462.8 m   (peak 472.1 m)
   terrain-aided final error     23.5 m
   acquired fix at               17.0 s
-  mean error while holding it   30.4 m
+  mean error while holding it   31.1 m
+  fix held for                  94.9 % of the flight
 ```
 
 Dead reckoning walks away linearly with time, because the inertial unit has a
