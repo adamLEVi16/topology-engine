@@ -344,19 +344,12 @@ int main(int argc, char** argv) {
         if (do_rmse) {
             // Sample on a stride offset from the grid nodes, so a grid map is
             // measured where it interpolates rather than only where it stores.
-            double se = 0.0, sg = 0.0;
-            long n = 0;
-            const double step = dem.spacing() * 2.5;
-            for (double y = step; y < dem.extent_y() - step; y += step) {
-                for (double x = step; x < dem.extent_x() - step; x += step) {
-                    const double de = map_ptr->elevation(x, y) - dem.elevation(x, y);
-                    const Vec2 g1 = map_ptr->gradient(x, y);
-                    const Vec2 g0 = dem.gradient(x, y);
-                    se += de * de;
-                    sg += (g1.x - g0.x) * (g1.x - g0.x) + (g1.y - g0.y) * (g1.y - g0.y);
-                    ++n;
-                }
-            }
+            // One sampling pass. This used to sweep the grid twice and re-query
+            // both maps for elevation and gradient in the second sweep -- four
+            // redundant map queries per point, which at ~16 us per SIREN query
+            // was most of the runtime of the fidelity measurement. It also left
+            // the second loop depending on an `n` counted by the first.
+            //
             // Two extra diagnostics, because elevation RMSE alone turns out not
             // to predict navigation performance at all.
             //  - mean |gradient| detects over-smoothing: a representation that
@@ -364,17 +357,27 @@ int main(int argc, char** argv) {
             //    on RMSE while destroying local distinctiveness.
             //  - the spread and tail of |error| detect spatially uneven error,
             //    which penalises particles differentially rather than in common.
+            double se = 0.0, sg = 0.0;
             double sum_gm = 0.0, sum_gt = 0.0, sum_ae = 0.0, sum_ae2 = 0.0, max_ae = 0.0;
+            long n = 0;
+            const double step = dem.spacing() * 2.5;
             for (double y = step; y < dem.extent_y() - step; y += step) {
                 for (double x = step; x < dem.extent_x() - step; x += step) {
-                    const Vec2 g1 = map_ptr->gradient(x, y);
-                    const Vec2 g0 = dem.gradient(x, y);
+                    double e1 = 0.0, e0 = 0.0;
+                    Vec2 g1, g0;
+                    map_ptr->sample(x, y, e1, g1);
+                    dem.sample(x, y, e0, g0);
+                    const double de = e1 - e0;
+                    se += de * de;
+                    sg += (g1.x - g0.x) * (g1.x - g0.x) + (g1.y - g0.y) * (g1.y - g0.y);
                     sum_gm += std::sqrt(g1.x * g1.x + g1.y * g1.y);
                     sum_gt += std::sqrt(g0.x * g0.x + g0.y * g0.y);
-                    const double ae = std::fabs(map_ptr->elevation(x, y) - dem.elevation(x, y));
+                    const double ae = std::fabs(de);
                     sum_ae += ae; sum_ae2 += ae * ae; max_ae = std::max(max_ae, ae);
+                    ++n;
                 }
             }
+            if (n == 0) { std::cerr << "error: map too small to sample\n"; return 1; }
             const double mean_ae = sum_ae / n;
             out << std::setprecision(4)
                 << "elevation RMSE   " << std::sqrt(se / n) << " m\n"
@@ -460,7 +463,11 @@ int main(int argc, char** argv) {
         out << "\nresult\n"
             << "  dead reckoning final error   " << summary.final_dr_error << " m"
             << "   (peak " << summary.max_dr_error << " m)\n"
-            << "  terrain-aided final error    " << summary.final_pf_error << " m\n";
+            << "  terrain-aided final error    " << summary.final_pf_error << " m\n"
+            // The starvation indicator was not only clamped at the resample
+            // threshold, it was never printed either, so nothing could act on it.
+            << "  lowest N_eff                 " << 100.0 * summary.min_neff_fraction
+            << " % of the population\n";
 
         if (!summary.ever_converged) {
             out << "  never acquired a fix (spread threshold " << summary.spread_threshold << " m)\n"

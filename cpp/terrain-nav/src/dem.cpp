@@ -214,9 +214,14 @@ Dem Dem::from_hgt(const std::string& path, double spacing_override) {
         double latitude = 0.0;
         const auto slash = path.find_last_of("/\\");
         const std::string name = (slash == std::string::npos) ? path : path.substr(slash + 1);
+        // Both digits have to be checked. Testing only the first let
+        // "N3W122.hgt" parse as latitude 3 via std::stod's prefix parsing, and a
+        // non-numeric second character threw out of stod as a bare "stod" with no
+        // mention of which file was at fault.
         if (name.size() >= 7 && (name[0] == 'N' || name[0] == 'S') &&
-            std::isdigit(static_cast<unsigned char>(name[1]))) {
-            latitude = std::stod(name.substr(1, 2));
+            std::isdigit(static_cast<unsigned char>(name[1])) &&
+            std::isdigit(static_cast<unsigned char>(name[2]))) {
+            latitude = (name[1] - '0') * 10.0 + (name[2] - '0');
             if (name[0] == 'S') latitude = -latitude;
         }
         const double dy = 30.87 * arcsec;

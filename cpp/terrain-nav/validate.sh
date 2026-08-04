@@ -347,6 +347,61 @@ done
 [[ "$good_ok" == 1 ]] && pass "ordinary arguments including negatives and zero still work" \
                       || fail "validation rejected a legitimate argument"
 
+echo "28. the N_eff diagnostic must be able to report starvation"
+# resample_if_needed() ends by recomputing the estimate from uniform weights, so
+# reading N_eff after it returns exactly N on every resampling step and is
+# otherwise floored at the resample threshold. min_neff_fraction was therefore
+# clamped at 50% by construction and could never observe the starvation it
+# exists to detect. A healthy informative run drives it well below that.
+neff=$("$BIN" --terrain ridged --dem-size 800 --relief 2500 --duration 200 --quiet \
+       | awk '/lowest N_eff/{print $3}')
+ok=$(awk -v v="$neff" 'BEGIN{print (v+0==v && v < 50) ? 1 : 0}')
+[[ "$ok" == 1 ]] && pass "lowest N_eff reported as ${neff}%, below the 50% resample threshold" \
+                 || fail "lowest N_eff ${neff}% — the indicator is still clamped at the threshold"
+
+echo "29. structurally invalid neural maps must be refused"
+# Built here rather than depending on $SIREN, because these two corruptions are
+# exactly the ones that produce a confident, entirely fictional map: mismatched
+# layer widths evaluate against stale activations, and a denormal omega collapses
+# the network to a constant that reads downstream as uninformative terrain.
+# Neither is detectable by --probe, whose finite-difference check agrees
+# perfectly because both paths evaluate the same wrong network.
+tmp=$(mktemp -d)
+python3 - "$tmp" <<'PYEOF'
+import struct, sys, random
+sd = sys.argv[1]; random.seed(0)
+def write(path, dims, omegas, patch=None):
+    with open(path, "wb") as f:
+        f.write(b"SIREN01\0")
+        f.write(struct.pack("<6f", 6000., 6000., 3000., 3000., 500., 1000.))
+        f.write(struct.pack("<i", len(dims) - 1))
+        for i in range(len(dims) - 1):
+            fi, fo = dims[i], dims[i + 1]
+            f.write(struct.pack("<iif", fi, fo, omegas[i]))
+            f.write(struct.pack("<%df" % (fi * fo), *[random.uniform(-.3, .3) for _ in range(fi * fo)]))
+            f.write(struct.pack("<%df" % fo, *([0.0] * fo)))
+write(f"{sd}/good.siren", [2, 32, 32, 1], [30.0, 30.0, 0.0])
+# layer 0 emits 64, layer 1 declares 32 inputs: widths do not chain
+write(f"{sd}/chain.siren", [2, 64, 1], [30.0, 0.0])
+with open(f"{sd}/chain.siren", "r+b") as f:
+    f.seek(8 + 24 + 4 + 12 + (2 * 64) * 4 + 64 * 4)
+    f.write(struct.pack("<i", 32))
+# omega overwritten with a denormal
+write(f"{sd}/omega.siren", [2, 32, 32, 1], [30.0, 30.0, 0.0])
+with open(f"{sd}/omega.siren", "r+b") as f:
+    f.seek(8 + 24 + 4 + 8); f.write(struct.pack("<i", 64))
+PYEOF
+neural_ok=1
+for f in chain omega; do
+    "$BIN" --dem-size 200 --neural "$tmp/$f.siren" --probe 3000,3000 > /dev/null 2>&1 && {
+        neural_ok=0; echo "      accepted structurally invalid map: $f.siren"; }
+done
+"$BIN" --dem-size 200 --neural "$tmp/good.siren" --probe 3000,3000 > /dev/null 2>&1 || {
+    neural_ok=0; echo "      rejected a VALID network"; }
+rm -rf "$tmp"
+[[ "$neural_ok" == 1 ]] && pass "non-chaining widths and denormal omega refused, valid network accepted" \
+                        || fail "a structurally invalid neural map was accepted"
+
 echo
 if [[ $fails -eq 0 ]]; then echo "all checks passed"; else echo "$fails check(s) failed"; fi
 exit $fails
