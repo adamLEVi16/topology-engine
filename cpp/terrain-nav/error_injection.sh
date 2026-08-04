@@ -9,6 +9,11 @@ set -uo pipefail
 
 BIN=${BIN:-./build/terrain_nav}
 SEEDS=${SEEDS:-$(seq 1 12)}
+# Realisations of the injected error field. Varying only --seed changes sensor
+# noise, the true INS bias and the start offset -- NOT the error field, which
+# stays at its default. Sweeping wavelength against a single realisation
+# measures that one field's quirks, not the effect of wavelength.
+ERROR_SEEDS=${ERROR_SEEDS:-11 12 13 14 15 16 17 18}
 [[ -x "$BIN" ]] || { echo "error: $BIN not found — build first" >&2; exit 1; }
 
 # Due east, so "along x" is unambiguously along-track for the anisotropy sweep.
@@ -22,9 +27,11 @@ cell() {   # error args... -> "median diverged worst"
     local tmp
     tmp=$(mktemp "${TMPDIR:-/tmp}/terrainnav.XXXXXX") || return 1
     local vals=""
-    for s in $SEEDS; do
-        vals="$vals $("$BIN" $WORLD "$@" $FLIGHT --seed "$s" \
-                      | awk '/terrain-aided final error/{print $4}')"
+    for es in $ERROR_SEEDS; do
+        for s in $SEEDS; do
+            vals="$vals $("$BIN" $WORLD "$@" --error-seed "$es" $FLIGHT --seed "$s" \
+                          | awk '/terrain-aided final error/{print $4}')"
+        done
     done
     echo "$vals" | tr ' ' '\n' | grep -v '^$' | sort -n > "$tmp"
     local n med div worst
@@ -42,7 +49,8 @@ rms() { "$BIN" $WORLD "$@" --map-rmse | awk '/elevation RMSE/{printf "%.1f", $3}
 
 echo "Base: exact 1000x1000 grid @ 30 m, ridged, 2500 m relief"
 echo "Flight: due east, 180 s, marginalised filter, no gradient inflation"
-echo "Seeds per cell: $(echo $SEEDS | wc -w).  'diverged' = final error > 300 m."
+echo "Per cell: $(echo $ERROR_SEEDS | wc -w) error-field realisations x $(echo $SEEDS | wc -w) flight seeds."
+echo "'diverged' = final error > 300 m."
 echo
 
 echo "== 1. AMPLITUDE (lambda 500 m, isotropic) — how much error can it absorb? =="

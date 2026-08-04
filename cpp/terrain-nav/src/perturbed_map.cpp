@@ -43,12 +43,16 @@ void PerturbedMap::calibrate_amplitude(double target_rms) {
     // Single-octave smooth noise has an awkward analytic variance, so measure it
     // once on a coarse sweep and solve for the scale. This makes the amplitude
     // parameter mean exactly what it says: RMS metres of vertical error.
+    // Integer-counted: accumulating the loop variable in floating point lets the
+    // sample count wobble by one with rounding, which is a poor foundation for a
+    // calibration constant.
+    constexpr int kSamples = 181;
     double sum_sq = 0.0;
     int n = 0;
-    const double step_x = std::max(base_.extent_x() / 180.0, 1e-6);
-    const double step_y = std::max(base_.extent_y() / 180.0, 1e-6);
-    for (double y = 0.0; y <= base_.extent_y(); y += step_y) {
-        for (double x = 0.0; x <= base_.extent_x(); x += step_x) {
+    for (int iy = 0; iy < kSamples; ++iy) {
+        const double y = base_.extent_y() * iy / (kSamples - 1);
+        for (int ix = 0; ix < kSamples; ++ix) {
+            const double x = base_.extent_x() * ix / (kSamples - 1);
             const double v = error_field(x, y, nullptr);
             sum_sq += v * v;
             ++n;

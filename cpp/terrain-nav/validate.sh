@@ -44,7 +44,11 @@ else
 fi
 
 echo "4. mixed terrain must acquire a fix and then lose it"
-out=$("$BIN" --terrain mixed --heading 0 --start 2000,18000 --duration 280 --quiet)
+# Needs a map big enough to fly well past the transition. On a shorter
+# flight the spread ends just under the threshold and loss is never
+# formally declared, even though the degradation is plainly underway.
+out=$("$BIN" --terrain mixed --dem-size 2000 --heading 0 --start 2000,30000 \
+      --duration 450 --quiet)
 if echo "$out" | grep -q "acquired fix at" && echo "$out" | grep -q "LOST fix at"; then
     r=$(echo "$out" | awk '/LOST fix at/ {print $(NF-1)}')
     ok=$(awk -v r="$r" 'BEGIN{print (r < 5) ? 1 : 0}')

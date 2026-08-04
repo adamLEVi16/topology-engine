@@ -18,6 +18,8 @@ public:
 
     double elevation(double x, double y) const override;
     Vec2 gradient(double x, double y) const override;
+    void sample(double x, double y, double& elevation_out,
+                Vec2& gradient_out) const override;
     bool in_bounds(double x, double y) const override;
 
     double extent_x() const override { return extent_x_; }
