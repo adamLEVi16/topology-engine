@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cmath>
 
 // Just enough 2-D linear algebra for the per-particle bias filter. Everything
@@ -49,10 +50,16 @@ inline Vec2 operator*(const Mat2& a, const Vec2& v) {
     return Vec2{a.m00 * v.x + a.m01 * v.y, a.m10 * v.x + a.m11 * v.y};
 }
 
+// PRECONDITION: the caller must guarantee a non-singular matrix. On a singular
+// input this returns the zero matrix, which silently annihilates whatever it
+// multiplies rather than producing a NaN you would notice. That is the right
+// behaviour for a hot loop with a proven invariant and the wrong behaviour for
+// a caller without one, so the assert makes the contract fail loudly in debug
+// builds. The one caller here inverts dt^2 * P + I * process_noise^2, whose
+// determinant is bounded below by process_noise^4.
 inline Mat2 inverse(const Mat2& a) {
     const double det = a.m00 * a.m11 - a.m01 * a.m10;
-    // Covariances here always carry additive process noise, so det > 0 in
-    // practice; the guard only stops a pathological config from producing NaNs.
+    assert(std::fabs(det) > 1e-300 && "inverse() called on a singular matrix");
     const double inv_det = (std::fabs(det) > 1e-300) ? 1.0 / det : 0.0;
     return Mat2{ a.m11 * inv_det, -a.m01 * inv_det,
                 -a.m10 * inv_det,  a.m00 * inv_det};

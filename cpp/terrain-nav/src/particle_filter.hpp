@@ -64,6 +64,11 @@ class ParticleFilter {
 public:
     ParticleFilter(const PfConfig& config, const TerrainMap& dem, std::uint64_t seed);
 
+    // Scatter particles and fully reset filter state, including re-seeding the
+    // generator. Calling this twice therefore REPRODUCES the first run exactly
+    // rather than continuing the random stream. For an ensemble of independent
+    // Monte Carlo runs, construct a filter per run with a different seed —
+    // re-initialising one filter in a loop would give you the same run N times.
     void initialize(double x0, double y0);
 
     // Propagate one step given the inertially reported velocity. Bias-aware

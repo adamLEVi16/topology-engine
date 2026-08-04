@@ -163,9 +163,16 @@ Dem Dem::from_hgt(const std::string& path, double spacing_override) {
 
     if (valid_count == 0) throw std::runtime_error(path + ": every sample is a void");
 
-    // Fill voids from an already-written neighbour, falling back to the tile
-    // mean. Filling with 0.0 would be worse than useless on a mountain tile: it
-    // manufactures a sea-level cliff that the filter reads as real terrain.
+    // Fill voids from an already-written neighbour, west first, then north,
+    // then the tile mean. Filling with 0.0 would be worse than useless on a
+    // mountain tile: it manufactures a sea-level cliff the filter reads as real
+    // terrain.
+    //
+    // Clearing is_void as each cell is filled matters more than it looks. It
+    // lets a filled cell serve as a neighbour for the next one, so an entire
+    // void column has its topmost cell seeded from the mean and every cell below
+    // it inherits from the north. Only the very first cell processed can have
+    // neither a west nor a north neighbour.
     if (voids > 0) {
         const auto mean = static_cast<float>(valid_sum / valid_count);
         for (int row = 0; row < side; ++row) {

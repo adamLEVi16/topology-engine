@@ -107,12 +107,21 @@ void ParticleFilter::predict(const Vec2& measured_velocity, double dt) {
                 //   step = (v_meas - b)*dt + w,   so   H = -dt * I
                 // This is the whole trick — the terrain never sees the bias, but
                 // the displacement does.
+                // Textbook Kalman update, with H spelled out rather than folded
+                // into a scaled identity: measuring the step tells us about the
+                // bias through step = (v_meas - b)*dt + w, so H = -dt * I.
+                //
+                // s is never singular here: it is dt^2 * P + process_cov, and
+                // process_cov is I * process_noise^2 with process_noise > 0
+                // enforced at construction, so det(s) >= process_noise^4. At the
+                // smallest useful setting that is still ~1e-24 against an
+                // inverse() clamp at 1e-300.
+                const Mat2 h = Mat2::identity(-dt);
                 const Vec2 innovation = step - nominal;
-                const Mat2 s_inv = inverse(s);
-                const Mat2 gain = p.bias_cov * s_inv * (-dt);
+                const Mat2 gain = p.bias_cov * inverse(s) * (-dt);
 
                 p.bias += gain * innovation;
-                p.bias_cov = (Mat2::identity() - gain * Mat2::identity(-dt)) * p.bias_cov;
+                p.bias_cov = (Mat2::identity() - gain * h) * p.bias_cov;
 
                 // Bias random walk, keeping the filter able to track slow changes.
                 p.bias_cov = p.bias_cov + Mat2::identity(config_.bias_walk * config_.bias_walk);

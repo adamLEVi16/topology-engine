@@ -299,6 +299,23 @@ ok=$(awk -v l="$lo" 'BEGIN{print (l+0==l && l > 100) ? 1 : 0}')
 [[ "$ok" == 1 ]] && pass "voids filled from neighbours, min elevation ${lo} m (not 0)" \
                  || fail "void fill produced a sea-level artifact (min ${lo} m)"
 
+echo "25. the bias-update covariance must stay non-singular at extreme settings"
+# s = dt^2 * P + I * process_noise^2, so det(s) >= process_noise^4. The smallest
+# legal process noise still leaves ~1e-24 against an inverse() clamp at 1e-300.
+# A debug build asserts on this; here we check the results stay finite.
+sing_ok=1
+for pn in 1e-6 1e-3 0.1 1000; do
+    for bw in 0 1e-9; do
+        v=$("$BIN" --dem-size 300 --relief 2500 --filter rbpf --duration 60 \
+             --process-noise $pn --bias-walk $bw --quiet 2>/dev/null \
+             | awk '/terrain-aided final error/{print $4}')
+        ok=$(awk -v v="$v" 'BEGIN{print (v != "" && v+0==v) ? 1 : 0}')
+        [[ "$ok" == 1 ]] || { sing_ok=0; echo "      non-finite at process-noise=$pn bias-walk=$bw: '$v'"; }
+    done
+done
+[[ "$sing_ok" == 1 ]] && pass "finite results across 1e-6 to 1e3 process noise" \
+                      || fail "the bias update produced a non-finite result"
+
 echo
 if [[ $fails -eq 0 ]]; then echo "all checks passed"; else echo "$fails check(s) failed"; fi
 exit $fails
