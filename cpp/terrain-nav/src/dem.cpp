@@ -86,7 +86,11 @@ Dem Dem::synthetic(int width, int height, double spacing,
 
     // Roughly six noise cycles across the map, then 8 octaves of detail on top.
     const double scale = 6.0 / std::max(width, height);
-    const double relief = flat ? (relief_scale / 75.0) : relief_scale;  // metres of vertical relief
+    // "flat" is the deliberately uninformative case that the observability
+    // checks depend on, so cap its relief well under the ~9.5 m sensor noise
+    // floor. Without the cap, --terrain flat --relief 5000 yields 67 m of relief
+    // and stops being flat.
+    const double relief = flat ? std::min(relief_scale / 75.0, 12.0) : relief_scale;
     const double base = 300.0;
 
     for (int j = 0; j < height; ++j) {
@@ -326,14 +330,24 @@ Dem Dem::downsample(int factor) const {
     if (factor < 1) throw std::invalid_argument("downsample factor must be >= 1");
     if (factor == 1) return *this;
 
+    // Round the node count UP so the coarse grid covers the full truth extent.
+    // Rounding down leaves it short whenever factor does not divide (w_-1) --
+    // 210 m for 800x800 at 8x -- which biases a like-for-like comparison twice
+    // over: --map-rmse measures the missing strip against clamped edge values,
+    // and particles standing over real ground fall outside the stored map's
+    // in_bounds and take the off-map penalty.
+    //
+    // The spacing must stay factor * spacing. Stretching it instead to make the
+    // extent come out exact would misregister every sample, shearing the coarse
+    // map against the data it was averaged from -- which measures far worse than
+    // the short extent it was meant to fix.
     Dem out;
-    out.w_ = (w_ - 1) / factor + 1;
-    out.h_ = (h_ - 1) / factor + 1;
+    out.w_ = (w_ - 1 + factor - 1) / factor + 1;
+    out.h_ = (h_ - 1 + factor - 1) / factor + 1;
     out.spacing_ = spacing_ * factor;
     out.z_.resize(static_cast<std::size_t>(out.w_) * out.h_);
 
-    // Average the source block centred on each output node, so the coarse grid
-    // keeps the same physical extent and the same mean elevation.
+    // Average the source block centred on each output node.
     const int half = factor / 2;
     for (int j = 0; j < out.h_; ++j) {
         for (int i = 0; i < out.w_; ++i) {

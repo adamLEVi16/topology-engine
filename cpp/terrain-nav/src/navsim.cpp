@@ -8,7 +8,8 @@
 #include <stdexcept>
 
 namespace {
-constexpr double kDeg2Rad = 3.14159265358979323846 / 180.0;
+constexpr double kPi = 3.14159265358979323846;
+constexpr double kDeg2Rad = kPi / 180.0;
 
 double distance(double ax, double ay, double bx, double by) {
     const double dx = ax - bx;
@@ -35,7 +36,12 @@ RunSummary NavSim::run(std::ostream* log) {
     // The inertial platform carries a fixed, unknown velocity bias. This is what
     // makes dead reckoning walk away linearly with time, and it is exactly what
     // the bias-estimating filter modes are trying to recover.
-    const double bias_angle = unit(rng) * 3.0;
+    // Direction is uniform on the circle. This was previously a normal(0, 3 rad)
+    // draw, which wraps to something close to uniform but reads as though the
+    // bias had a preferred bearing. Changing it re-rolls every seeded result, so
+    // absolute numbers shift; the distribution it samples does not.
+    std::uniform_real_distribution<double> bearing(-kPi, kPi);
+    const double bias_angle = bearing(rng);
     const Vec2 true_bias{scenario_.ins_bias * std::cos(bias_angle),
                          scenario_.ins_bias * std::sin(bias_angle)};
 
@@ -79,6 +85,7 @@ RunSummary NavSim::run(std::ostream* log) {
     double pending_fix_time = -1.0;
     double pending_loss_time = -1.0;
     double pending_loss_roughness = 0.0;
+    double pending_loss_error = 0.0;
     double error_at_loss = 0.0;
     // A fix has to persist to count. One lucky step inside the threshold is not
     // localisation, and over flat ground the wandering estimate will clip below
@@ -118,6 +125,12 @@ RunSummary NavSim::run(std::ostream* log) {
         const double ground_measured = baro - radar;
 
         filter_.update(ground_measured);
+        // Capture N_eff BEFORE resampling. resample_if_needed() ends by
+        // recomputing the estimate from freshly uniform weights, so reading it
+        // afterwards yields exactly N on every step that resampled and is
+        // otherwise floored at the resample threshold — a starvation indicator
+        // that cannot observe starvation.
+        const double neff_before_resample = filter_.effective_sample_size();
         filter_.resample_if_needed();
 
         // --- bookkeeping ------------------------------------------------------
@@ -132,7 +145,7 @@ RunSummary NavSim::run(std::ostream* log) {
         rec.dr_error = distance(dr_x, dr_y, true_x, true_y);
         rec.pf_error = distance(rec.pf_x, rec.pf_y, true_x, true_y);
         rec.spread = filter_.spread();
-        rec.neff = filter_.effective_sample_size();
+        rec.neff = neff_before_resample;
         rec.ground_truth = ground_truth;
         rec.ground_measured = ground_measured;
         rec.roughness = truth_dem_.roughness(true_x, true_y, 1500.0);
@@ -168,13 +181,19 @@ RunSummary NavSim::run(std::ostream* log) {
                 if (consecutive_above == 0) {
                     pending_loss_time = t;
                     pending_loss_roughness = rec.roughness;
+                    // Record the error at the moment the spread first exceeded
+                    // the threshold, not ten steps later when loss is declared:
+                    // coast_seconds is measured from this instant, so sampling
+                    // the error later would divide a shorter numerator by a
+                    // longer interval.
+                    pending_loss_error = rec.pf_error;
                 }
                 ++consecutive_above;
                 if (consecutive_above >= kStepsToDeclareLoss && !summary.lost_fix) {
                     summary.lost_fix = true;
                     summary.lost_fix_time = pending_loss_time;
                     summary.roughness_at_loss = pending_loss_roughness;
-                    error_at_loss = rec.pf_error;
+                    error_at_loss = pending_loss_error;
                 }
             }
         }

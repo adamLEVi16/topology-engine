@@ -148,10 +148,18 @@ void ParticleFilter::update(double measured_ground_elevation) {
             // Off the map: not impossible, just unsupported. A large finite
             // penalty rather than -inf keeps the filter recoverable if every
             // particle drifts outside at once.
-            p.log_weight += -50.0;
+            //
+            // The -0.5*log term is carried here too, against the base sensor
+            // variance. Omitting it would leave the off-map penalty measured on
+            // a different scale from the in-bounds branch, and with gradient
+            // inflation on that gap widens over steep ground -- making off-map
+            // relatively MORE attractive exactly where the terrain is most
+            // informative.
+            p.log_weight += -50.0 - 0.5 * std::log(sensor_var);
             continue;
         }
 
+        double map_elevation = 0.0;
         double variance = sensor_var;
         if (config_.inflate_on_gradient) {
             // First-order propagation of horizontal map error into vertical:
@@ -159,11 +167,13 @@ void ParticleFilter::update(double measured_ground_elevation) {
             // with Sigma_xy isotropic. On flat ground this reduces to the
             // sensor noise; on a 45-degree slope (|g| = 1) it adds the full
             // horizontal registration variance.
-            const Vec2 g = dem_.gradient(qx, qy);
+            Vec2 g;
+            dem_.sample(qx, qy, map_elevation, g);   // one pass, not two
             variance += map_v_var + (g.x * g.x + g.y * g.y) * map_h_var;
+        } else {
+            map_elevation = dem_.elevation(qx, qy);
         }
 
-        const double map_elevation = dem_.elevation(qx, qy);
         if (!std::isfinite(map_elevation) || !std::isfinite(variance)) {
             // A corrupt map (bad weights, truncated file) would otherwise put a
             // NaN into log_weight. std::max propagates the other operand past a

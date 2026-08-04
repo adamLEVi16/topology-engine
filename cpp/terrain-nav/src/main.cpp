@@ -44,6 +44,7 @@ void print_usage(const char* argv0) {
         "  --error-aspect X     stretch error along x by X, along y by 1/X (default 1)\n"
         "  --error-seed N       injected error field seed                  (default 11)\n"
         "  --dump-dem PATH    write the truth grid as raw float32 and exit\n"
+        "  --dump-map PATH    write the STORED map sampled on the truth grid, then exit\n"
         "  --map-rmse         report map fidelity vs truth (elevation + gradient), then exit\n"
         "  --bench-map N      time N elevation and gradient queries, then exit\n"
         "  --probe X,Y        print map elevation and gradient at a point, then exit\n"
@@ -381,7 +382,11 @@ int main(int argc, char** argv) {
                 << "mean |grad| map  " << sum_gm / n << "\n"
                 << "mean |grad| truth " << sum_gt / n << "\n"
                 << "relief retained  " << 100.0 * (sum_gm / sum_gt) << " %\n"
-                << "error std/mean   " << std::sqrt(sum_ae2 / n - mean_ae * mean_ae) / mean_ae << "\n"
+                << "error std/mean   "
+                << ((mean_ae > 0.0)
+                        ? std::sqrt(std::max(0.0, sum_ae2 / n - mean_ae * mean_ae)) / mean_ae
+                        : 0.0)
+                << "\n"
                 << "error max        " << max_ae << " m\n"
                 << "samples          " << n << "\n";
             return 0;
@@ -393,13 +398,15 @@ int main(int argc, char** argv) {
             for (long q = 0; q < bench_queries; ++q) {
                 const double x = std::fmod(q * 137.0, dem.extent_x() - 1.0);
                 const double y = std::fmod(q * 211.0, dem.extent_y() - 1.0);
-                sink += map_ptr->elevation(x, y);
-                sink += map_ptr->gradient(x, y).x;
+                double z = 0.0;
+                Vec2 g;
+                map_ptr->sample(x, y, z, g);
+                sink += z + g.x;
             }
             const auto t1 = std::chrono::steady_clock::now();
             const double ns = std::chrono::duration<double, std::nano>(t1 - t0).count() / bench_queries;
             out << std::setprecision(1) << "query cost       " << ns
-                << " ns per elevation+gradient pair\n"
+                << " ns per combined elevation+gradient query\n"
                 << "(checksum " << std::setprecision(3) << sink << ")\n";
             return 0;
         }

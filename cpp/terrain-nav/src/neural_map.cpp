@@ -62,6 +62,7 @@ NeuralMap NeuralMap::load(const std::string& path) {
         throw std::runtime_error(path + ": implausible layer count");
     }
 
+    int expected_in = 2;   // the network takes (x, y)
     for (int l = 0; l < n_layers; ++l) {
         Layer layer;
         layer.in    = read_pod<std::int32_t>(in, path);
@@ -72,6 +73,30 @@ NeuralMap NeuralMap::load(const std::string& path) {
             layer.in > kMaxWidth || layer.out > kMaxWidth) {
             throw std::runtime_error(path + ": layer wider than the " +
                                      std::to_string(kMaxWidth) + " unit limit");
+        }
+
+        // Layers must chain. Without this a file whose declared widths disagree
+        // loads happily and evaluates against whatever stale values are left in
+        // the activation buffer, returning confident nonsense. The finite
+        // difference self-check cannot catch it either, since both paths
+        // evaluate the same wrong network.
+        if (layer.in != expected_in) {
+            throw std::runtime_error(
+                path + ": layer " + std::to_string(l) + " takes " +
+                std::to_string(layer.in) + " inputs but the previous layer emits " +
+                std::to_string(expected_in));
+        }
+        expected_in = layer.out;
+
+        // omega is either exactly 0 (the linear output layer) or a frequency
+        // scale. A denormal or absurd value collapses the network to a constant,
+        // which reads downstream as terrain with no information rather than as a
+        // corrupt file.
+        if (!std::isfinite(layer.omega) ||
+            (layer.omega != 0.0 && (layer.omega < 0.1 || layer.omega > 1000.0))) {
+            throw std::runtime_error(
+                path + ": layer " + std::to_string(l) + " has implausible omega " +
+                std::to_string(layer.omega) + " (expected 0 or 0.1 to 1000)");
         }
 
         layer.weight.resize(static_cast<std::size_t>(layer.in) * layer.out);
@@ -102,7 +127,6 @@ double NeuralMap::evaluate(double x, double y, Vec2* jacobian) const {
 
     h[0] = x / x_scale_;
     h[1] = y / y_scale_;
-    int width = 2;
 
     if (jacobian) {
         dx[0] = 1.0 / x_scale_; dx[1] = 0.0;
@@ -142,13 +166,11 @@ double NeuralMap::evaluate(double x, double y, Vec2* jacobian) const {
             }
         }
         h = h_next;
-        width = layer.out;
         if (jacobian) {
             dx = dx_next;
             dy = dy_next;
         }
     }
-    (void)width;
 
     if (jacobian) {
         jacobian->x = dx[0] * z_scale_;
@@ -165,6 +187,11 @@ Vec2 NeuralMap::gradient(double x, double y) const {
     Vec2 g;
     evaluate(x, y, &g);
     return g;
+}
+
+void NeuralMap::sample(double x, double y, double& elevation_out,
+                       Vec2& gradient_out) const {
+    elevation_out = evaluate(x, y, &gradient_out);
 }
 
 bool NeuralMap::in_bounds(double x, double y) const {
