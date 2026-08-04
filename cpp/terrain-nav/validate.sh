@@ -316,6 +316,33 @@ done
 [[ "$sing_ok" == 1 ]] && pass "finite results across 1e-6 to 1e3 process noise" \
                       || fail "the bias update produced a non-finite result"
 
+echo "26. non-finite and malformed numeric arguments must be rejected"
+# std::atof accepts "nan" and "inf" and yields 0 for junk. A NaN relief made an
+# entirely NaN terrain that still reported a plausible final error, because every
+# particle took the same non-finite penalty and the run quietly became dead
+# reckoning. These must exit non-zero, not produce a number.
+bad_ok=1
+for arg in "--relief nan" "--relief inf" "--radar-sigma nan" "--baro-sigma inf" \
+           "--ins-bias nan" "--speed nan" "--meas-sigma nan" "--meas-sigma 0" \
+           "--particles 1" "--dem-size 0" "--start nan,5" "--map-shift 1,inf" \
+           "--relief abc" "--particles 5000x" "--duration -5"; do
+    if "$BIN" --dem-size 200 $arg --duration 5 --quiet > /dev/null 2>&1; then
+        bad_ok=0; echo "      accepted: $arg"
+    fi
+done
+[[ "$bad_ok" == 1 ]] && pass "15 non-finite / out-of-range / malformed arguments refused" \
+                     || fail "a non-finite or malformed argument was accepted"
+
+echo "27. valid arguments must still be accepted"
+good_ok=1
+for arg in "--relief 2500" "--speed 120" "--start 1500,1500" "--particles 5000" \
+           "--meas-sigma 10" "--heading -45" "--map-shift -20,30" "--seed 0"; do
+    "$BIN" --dem-size 200 $arg --duration 20 --quiet 2>/dev/null \
+        | grep -q "terrain-aided final error" || { good_ok=0; echo "      rejected: $arg"; }
+done
+[[ "$good_ok" == 1 ]] && pass "ordinary arguments including negatives and zero still work" \
+                      || fail "validation rejected a legitimate argument"
+
 echo
 if [[ $fails -eq 0 ]]; then echo "all checks passed"; else echo "$fails check(s) failed"; fi
 exit $fails
