@@ -347,6 +347,19 @@ done
 [[ "$good_ok" == 1 ]] && pass "ordinary arguments including negatives and zero still work" \
                       || fail "validation rejected a legitimate argument"
 
+echo "28. the exported STL must be a closed, consistently wound solid"
+tmp=$(mktemp -d)
+"$BIN" --dem-size 400 --dem-spacing 30 --relief 2500 --terrain ridged \
+       --stl "$tmp/t.stl" --stl-samples 120 > /dev/null 2>&1
+if res=$(python3 tools/check_stl.py "$tmp/t.stl"); then
+    set -- $res
+    pass "$1 triangles, watertight and consistently wound"
+else
+    set -- ${res:-? ? ?}
+    fail "STL not manifold: ${2:-?} unmatched edges, ${3:-?} duplicate directed edges"
+fi
+rm -rf "$tmp"
+
 echo
 if [[ $fails -eq 0 ]]; then echo "all checks passed"; else echo "$fails check(s) failed"; fi
 exit $fails

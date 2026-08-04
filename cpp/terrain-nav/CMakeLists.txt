@@ -20,6 +20,7 @@ add_executable(terrain_nav
   src/particle_filter.cpp
   src/perturbed_map.cpp
   src/render.cpp
+  src/stl_export.cpp
 )
 
 target_include_directories(terrain_nav PRIVATE src)

@@ -16,6 +16,7 @@
 #include "navsim.hpp"
 #include "particle_filter.hpp"
 #include "render.hpp"
+#include "stl_export.hpp"
 
 namespace {
 
@@ -45,6 +46,11 @@ void print_usage(const char* argv0) {
         "  --error-seed N       injected error field seed                  (default 11)\n"
         "  --dump-dem PATH    write the truth grid as raw float32 and exit\n"
         "  --dump-map PATH    write the STORED map sampled on the truth grid, then exit\n"
+        "  --stl PATH         export the terrain as a printable binary STL, then exit\n"
+        "  --stl-width X      long axis of the print, mm                (default 150)\n"
+        "  --stl-base X       solid base thickness, mm                  (default 3)\n"
+        "  --stl-exaggeration X  vertical scale multiplier              (default 1)\n"
+        "  --stl-samples N    grid decimated to N on the long axis      (default 300)\n"
         "  --map-rmse         report map fidelity vs truth (elevation + gradient), then exit\n"
         "  --bench-map N      time N elevation and gradient queries, then exit\n"
         "  --probe X,Y        print map elevation and gradient at a point, then exit\n"
@@ -163,7 +169,8 @@ int main(int argc, char** argv) {
     double probe_x = 0.0, probe_y = 0.0;
     bool do_probe = false;
     bool do_rmse = false;
-    std::string dump_map_path;
+    std::string dump_map_path, stl_path;
+    StlOptions stl;
     long bench_queries = 0;
     bool quiet = false;
     bool repeat_run = false;
@@ -196,6 +203,11 @@ int main(int argc, char** argv) {
         else if (arg == "--dump-dem")      dump_path = require_value(argc, argv, i);
         else if (arg == "--map-rmse")      do_rmse = true;
         else if (arg == "--dump-map")      dump_map_path = require_value(argc, argv, i);
+        else if (arg == "--stl")           stl_path = require_value(argc, argv, i);
+        else if (arg == "--stl-width")     stl.width_mm = require_finite(argc, argv, i, 1.0, 10000.0);
+        else if (arg == "--stl-base")      stl.base_mm = require_finite(argc, argv, i, 0.0, 1000.0);
+        else if (arg == "--stl-exaggeration") stl.exaggeration = require_finite(argc, argv, i, 0.01, 1000.0);
+        else if (arg == "--stl-samples")   stl.max_samples = static_cast<int>(require_int(argc, argv, i, 2, 4000));
         else if (arg == "--bench-map")     bench_queries = require_int(argc, argv, i, 1, 100000000L);
         else if (arg == "--probe") {
             if (!parse_pair(arg, require_value(argc, argv, i), -1e9, 1e9,
@@ -324,6 +336,11 @@ int main(int argc, char** argv) {
         out << "stored map   " << map_ptr->describe() << "   ("
             << map_ptr->memory_bytes() / 1024.0 << " KiB vs "
             << dem.memory_bytes() / 1024.0 << " KiB truth)\n";
+
+        if (!stl_path.empty()) {
+            write_stl(dem, stl_path, stl, std::cout);
+            return 0;
+        }
 
         if (!dump_map_path.empty()) {
             // Sample whatever representation is loaded onto the truth grid, so
