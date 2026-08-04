@@ -59,18 +59,24 @@ much of the US), or SRTM `.hgt` tiles, which this reads directly.
 ## What the run tells you
 
 ```
-    t(s)   dead-reckon terrain-aided      spread     N_eff   roughness
-     0.0         218.6         734.5       859.6      5000        68.3
-    20.0         205.0          18.5        39.3      4254        62.3
+    t(s)   dead-reckon terrain-aided     spread     N_eff  roughness
+     0.0         472.1         465.8     1195.8      1394       32.4
+    20.0         456.5          38.6       63.2      3762       31.3
    ...
-   259.0         234.2           1.0        43.6      5000        86.5
+   599.0         462.8          23.5       47.2      3418       44.9
 
 result
-  dead reckoning final error   234.2 m   (peak 234.2 m)
-  terrain-aided final error      1.0 m
-  acquired fix at               11.0 s
-  mean error while holding it   22.2 m
+  dead reckoning final error   462.8 m   (peak 472.1 m)
+  terrain-aided final error     23.5 m
+  lowest N_eff                  13.6 % of the population
+  acquired fix at               17.0 s
+  mean error while holding it   31.1 m
 ```
+
+`N_eff` is sampled before resampling, so it shows the value that triggers a
+resample rather than the uniform `N` that exists immediately afterwards. Read the
+other way it is pinned above the resample threshold by construction and can never
+report the particle starvation it exists to detect.
 
 Dead reckoning walks away linearly with time, because the inertial unit has a
 small constant velocity bias and nothing ever corrects it. The terrain-aided
@@ -187,8 +193,8 @@ Practical consequences, all of which fall straight out of this:
 14. Gradient inflation improves accuracy when map error correlates with slope
 15. Gradient inflation does not degrade a run against an exact map
 
-Current results: 600 s of flight, dead reckoning ends **497 m** out while the
-terrain-aided solution holds **16 m**, with a mean of 32 m once converged.
+Current results: 600 s of flight, dead reckoning ends **463 m** out while the
+terrain-aided solution holds **24 m**, with a mean of 31 m once converged.
 
 ## Calibrating the inertial unit
 
@@ -238,22 +244,22 @@ Mean bias error over 8 seeds, 400 s of flight over ridged terrain:
 
 | Filter | Particles | Mean bias error | Worst seed |
 |---|---|---|---|
-| `pf4d` | 1,000 | 2.363 m/s | 4.863 m/s |
-| `pf4d` | 5,000 | 0.724 m/s | 1.062 m/s |
-| `pf4d` | 20,000 | 0.356 m/s | 0.744 m/s |
-| `pf4d` | 40,000 | 0.246 m/s | 0.675 m/s |
-| **`rbpf`** | **1,000** | **0.114 m/s** | **0.273 m/s** |
-| `rbpf` | 5,000 | 0.118 m/s | 0.214 m/s |
+| `pf4d` | 1,000 | 1.544 m/s | 3.808 m/s |
+| `pf4d` | 5,000 | 0.567 m/s | 0.969 m/s |
+| `pf4d` | 20,000 | 0.374 m/s | 0.640 m/s |
+| `pf4d` | 40,000 | 0.230 m/s | 0.406 m/s |
+| **`rbpf`** | **1,000** | **0.145 m/s** | **0.252 m/s** |
+| `rbpf` | 5,000 | 0.104 m/s | 0.208 m/s |
 
-The Rao-Blackwellised filter with **1,000** particles is more than twice as
-accurate as the bootstrap with **40,000** — a 40× reduction that extrapolates to
-well over 100× to actually match it. It also runs marginally *faster* at equal
-particle count, because sharper weights mean fewer resampling events.
+The Rao-Blackwellised filter with **1,000** particles is more accurate than the
+bootstrap with **40,000** — a 40× reduction in particle count that still leaves
+the bootstrap behind. It also runs marginally *faster* at equal particle count,
+because sharper weights mean fewer resampling events.
 
-Note too that `rbpf` is flat from 1,000 to 5,000 particles: it has already hit
-the information limit of the measurements. Adding particles cannot help, because
+Note too that `rbpf` barely moves from 1,000 to 5,000 particles: it is close to
+the information limit of the measurements. Adding particles buys little, because
 the bias uncertainty is being integrated analytically rather than sampled. That
-is the Rao-Blackwell variance-reduction theorem showing up as a flat line.
+is the Rao-Blackwell variance-reduction theorem showing up as a nearly flat line.
 
 The bootstrap at 1,000 particles is worse than its own 3 m/s prior — with four
 dimensions to cover, the cloud simply cannot span the space, and it diverges.
@@ -265,14 +271,19 @@ alone (`--terrain mixed`, 60 km map, 450 s):
 
 | Filter | Bias error | Coast drift rate | Final position error |
 |---|---|---|---|
-| `pf2d` | not estimated | 0.79 m/s | 244.7 m |
-| `pf4d` | 0.530 m/s | 0.58 m/s | 125.6 m |
-| `rbpf` | 0.119 m/s | **0.32 m/s** | **59.6 m** |
+| `pf2d` | not estimated | 1.01 m/s | 270.6 m |
+| `pf4d` | 0.389 m/s | 0.36 m/s | 95.8 m |
+| `rbpf` | 0.172 m/s | **0.18 m/s** | **62.1 m** |
 
 Same terrain, same sensors, same particle count. The only difference is how well
 the inertial bias was solved while the terrain was still informative — and it
-shows up as a 2.5× slower error growth and a 4× better final position once the
+shows up as a 5.6× slower error growth and a 4× better final position once the
 terrain has gone quiet. That is the entire argument for co-estimating the bias.
+
+The drift rate is measured from the moment the spread crosses the threshold, not
+from the moment the loss is *declared* ten steps later. Dividing the later
+interval's error growth by the earlier interval's duration understated it by
+about 8%.
 
 ## The map is not the truth
 
@@ -307,11 +318,11 @@ correct particles. Measured, over terrain with a 52° mean slope:
 
 | Map shift | ‖shift‖ | Final error | Fix held |
 |---|---|---|---|
-| 0, 0 | 0.0 m | 3.6 m | 96.8 % |
-| 10, 10 | 14.1 m | 16.7 m | 96.8 % |
-| 20, 20 | 28.3 m | 30.3 m | 96.8 % |
-| 40, 40 | 56.6 m | 59.6 m | 96.8 % |
-| 80, 80 | 113.1 m | 115.5 m | 96.2 % |
+| 0, 0 | 0.0 m | 12.1 m | 96.2 % |
+| 10, 10 | 14.1 m | 24.2 m | 96.0 % |
+| 20, 20 | 28.3 m | 37.7 m | 96.2 % |
+| 40, 40 | 56.6 m | 64.5 m | 96.2 % |
+| 80, 80 | 113.1 m | 121.5 m | 96.2 % |
 
 The error tracks ‖shift‖ almost exactly and the filter never loses confidence.
 
@@ -388,6 +399,22 @@ from exactly the same stored bytes.** That, not bilinear, is the honest baseline
 
 Truth is an 800×800 grid at 30 m (2 500 KiB) over ridged terrain with a 42° mean
 slope. Navigation figures are medians over 8 seeds with the marginalised filter.
+
+> **These two tables predate the harness fixes and have not been regenerated.**
+> The INS bias bearing is now drawn uniformly rather than from a wrapped normal,
+> which re-rolls every seeded run, so the navigation columns will move. The query
+> column will move further: the map interface now returns elevation and gradient
+> from one call, which costs a neural field one forward pass instead of two.
+> Regenerating needs the trained SIREN weights, which are an offline step and are
+> not in the repo — so the numbers are left as recorded rather than half-updated.
+> Measured against the current build, the query figures are 41 ns for the
+> bilinear grid, 91 ns bicubic, and 16 913 ns for a 64×3 SIREN — a **186×**
+> penalty against the bicubic baseline, not the ~300× recorded below.
+>
+> The ordering the section argues from — bicubic beating bilinear on both median
+> and tail, and the neural map losing on navigation despite winning on
+> reconstruction — is a large effect and is not expected to invert. But treat the
+> specific figures as stale.
 
 | Representation | Store | Elev RMSE | Nav median | Nav worst | Query |
 |---|---|---|---|---|---|

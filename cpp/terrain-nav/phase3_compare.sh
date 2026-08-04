@@ -8,6 +8,17 @@
 # The bicubic row is the point of the experiment. A coarse grid is not obliged to
 # be stair-stepped -- bicubic gives it smooth, analytic gradients from the very
 # same bytes -- so it, not bilinear, is the baseline a neural field has to beat.
+#
+# KNOWN LIMITATION: $SEEDS varies the flight only -- sensor noise, INS bias, start
+# offset. The terrain is one realisation (--terrain-seed default) for every row.
+# The equivalent confound in error_injection.sh, where the injected error field
+# was likewise held fixed across everything called a seed, turned out to dominate
+# the axis being swept, so do not read these medians as spanning terrains.
+#
+# Unlike that case it is not cheaply fixable: a different terrain needs a SIREN
+# retrained against it, so pooling over terrains means retraining per seed. The
+# grid rows could be pooled today; the neural rows could not, and pooling only
+# half the table would be worse than pooling none of it.
 set -uo pipefail
 
 BIN=${BIN:-./build/terrain_nav}
