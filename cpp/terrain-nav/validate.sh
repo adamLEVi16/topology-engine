@@ -265,6 +265,40 @@ else
     echo "  SKIP  set SIREN=path/to/map.siren to enable"
 fi
 
+echo "23. reusing a simulator must reproduce the first run exactly"
+# initialize() re-seeds the generator and clears the counters. Without that a
+# second run() would continue the RNG stream and silently diverge.
+rep_ok=1
+for m in pf2d pf4d rbpf; do
+    "$BIN" --dem-size 300 --relief 2500 --filter $m --duration 60 --quiet --repeat-run \
+        2>/dev/null | grep -q "repeat run    IDENTICAL" || { rep_ok=0; echo "      $m diverged"; }
+done
+[[ "$rep_ok" == 1 ]] && pass "all three filter modes are idempotent across runs" \
+                     || fail "a filter mode leaked state between runs"
+
+echo "24. a void-heavy .hgt must not manufacture sea-level terrain"
+tmp=$(mktemp -d)
+python3 - "$tmp/voidy.hgt" <<'PY'
+import struct, math, sys
+side = 1201
+vals = []
+for row in range(side):
+    for col in range(side):
+        # Whole first column void (no west neighbour exists), plus an interior
+        # block and the top-left corner (no west AND no north neighbour).
+        if col == 0 or (300 < row < 340 and 500 < col < 560) or (row < 3 and col < 3):
+            vals.append(-32768)
+        else:
+            vals.append(int(1500 + 600 * math.sin(col / 70.0) + 400 * math.cos(row / 90.0)))
+open(sys.argv[1], "wb").write(struct.pack('>%dh' % len(vals), *vals))
+PY
+lo=$("$BIN" --hgt "$tmp/voidy.hgt" --duration 1 --quiet 2>/dev/null \
+     | awk '/^elevation /{print $2; exit}')
+rm -rf "$tmp"
+ok=$(awk -v l="$lo" 'BEGIN{print (l+0==l && l > 100) ? 1 : 0}')
+[[ "$ok" == 1 ]] && pass "voids filled from neighbours, min elevation ${lo} m (not 0)" \
+                 || fail "void fill produced a sea-level artifact (min ${lo} m)"
+
 echo
 if [[ $fails -eq 0 ]]; then echo "all checks passed"; else echo "$fails check(s) failed"; fi
 exit $fails

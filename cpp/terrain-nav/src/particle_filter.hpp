@@ -100,6 +100,7 @@ private:
     std::vector<Particle> particles_;
     std::vector<Particle> scratch_;
     std::vector<double> lin_weights_;
+    std::uint64_t seed_ = 0;
     std::mt19937_64 rng_;
 
     double mean_x_ = 0.0;

@@ -134,8 +134,12 @@ Dem Dem::from_hgt(const std::string& path, double spacing_override) {
     dem.z_.resize(samples);
 
     // Big-endian int16, and .hgt stores the northernmost row first, so flip
-    // vertically to put y increasing northward.
+    // vertically to put y increasing northward. Voids are marked -32768.
+    std::vector<char> is_void(samples, 0);
+    double valid_sum = 0.0;
+    std::size_t valid_count = 0;
     int voids = 0;
+
     for (int row = 0; row < side; ++row) {
         const int j = side - 1 - row;
         for (int i = 0; i < side; ++i) {
@@ -143,19 +147,50 @@ Dem Dem::from_hgt(const std::string& path, double spacing_override) {
             const auto hi = static_cast<std::int16_t>(static_cast<unsigned char>(raw[k]));
             const auto lo = static_cast<unsigned char>(raw[k + 1]);
             const auto v = static_cast<std::int16_t>((hi << 8) | lo);
-            // -32768 marks a void; hold the previous sample rather than
-            // punching a hole the filter would read as a cliff.
-            float value = (v == -32768) ? 0.0f : static_cast<float>(v);
+            const std::size_t idx = static_cast<std::size_t>(j) * side + i;
+
             if (v == -32768) {
+                is_void[idx] = 1;
                 ++voids;
-                if (i > 0) value = dem.z_[static_cast<std::size_t>(j) * side + (i - 1)];
+                dem.z_[idx] = 0.0f;
+            } else {
+                dem.z_[idx] = static_cast<float>(v);
+                valid_sum += v;
+                ++valid_count;
             }
-            dem.z_[static_cast<std::size_t>(j) * side + i] = value;
         }
     }
+
+    if (valid_count == 0) throw std::runtime_error(path + ": every sample is a void");
+
+    // Fill voids from an already-written neighbour, falling back to the tile
+    // mean. Filling with 0.0 would be worse than useless on a mountain tile: it
+    // manufactures a sea-level cliff that the filter reads as real terrain.
     if (voids > 0) {
-        std::fprintf(stderr, "note: %s contained %d void samples, filled by nearest west neighbour\n",
-                     path.c_str(), voids);
+        const auto mean = static_cast<float>(valid_sum / valid_count);
+        for (int row = 0; row < side; ++row) {
+            const int j = side - 1 - row;
+            for (int i = 0; i < side; ++i) {
+                const std::size_t idx = static_cast<std::size_t>(j) * side + i;
+                if (!is_void[idx]) continue;
+                if (i > 0 && !is_void[idx - 1]) {
+                    dem.z_[idx] = dem.z_[idx - 1];              // west
+                } else if (j + 1 < side &&
+                           !is_void[idx + static_cast<std::size_t>(side)]) {
+                    dem.z_[idx] = dem.z_[idx + side];           // north, already written
+                } else {
+                    dem.z_[idx] = mean;
+                }
+                is_void[idx] = 0;   // now a usable neighbour for the rest of the sweep
+            }
+        }
+    }
+
+    if (voids > 0) {
+        std::fprintf(stderr,
+                     "note: %s contained %d void samples (%.2f%%), filled from "
+                     "neighbours or the tile mean\n",
+                     path.c_str(), voids, 100.0 * voids / static_cast<double>(samples));
     }
 
     if (spacing_override > 0.0) {

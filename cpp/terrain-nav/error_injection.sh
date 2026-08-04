@@ -16,17 +16,23 @@ WORLD="--dem-size 1000 --dem-spacing 30 --relief 2500 --terrain ridged"
 FLIGHT="--filter rbpf --heading 0 --start 3000,15000 --duration 180 --quiet"
 
 cell() {   # error args... -> "median diverged worst"
+    # A private temp file per call: a fixed /tmp path would collide between two
+    # concurrent invocations of this script and is a symlink target in a shared
+    # /tmp. mktemp gives a unique name and safe permissions.
+    local tmp
+    tmp=$(mktemp "${TMPDIR:-/tmp}/terrainnav.XXXXXX") || return 1
     local vals=""
     for s in $SEEDS; do
         vals="$vals $("$BIN" $WORLD "$@" $FLIGHT --seed "$s" \
                       | awk '/terrain-aided final error/{print $4}')"
     done
-    echo "$vals" | tr ' ' '\n' | grep -v '^$' | sort -n > /tmp/ei.txt
+    echo "$vals" | tr ' ' '\n' | grep -v '^$' | sort -n > "$tmp"
     local n med div worst
-    n=$(wc -l < /tmp/ei.txt)
-    med=$(awk -v n="$n" '{a[NR]=$1} END{printf "%.1f", (n%2)?a[(n+1)/2]:(a[n/2]+a[n/2+1])/2}' /tmp/ei.txt)
-    div=$(awk '$1>300' /tmp/ei.txt | wc -l)
-    worst=$(tail -1 /tmp/ei.txt)
+    n=$(wc -l < "$tmp")
+    med=$(awk -v n="$n" '{a[NR]=$1} END{printf "%.1f", (n%2)?a[(n+1)/2]:(a[n/2]+a[n/2+1])/2}' "$tmp")
+    div=$(awk '$1>300' "$tmp" | wc -l)
+    worst=$(tail -1 "$tmp")
+    rm -f "$tmp"
     printf "%s %s/%s %s" "$med" "$div" "$n" "$worst"
 }
 

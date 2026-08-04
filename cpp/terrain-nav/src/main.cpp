@@ -73,6 +73,8 @@ void print_usage(const char* argv0) {
         "output\n"
         "  --csv PATH         per-step history as CSV\n"
         "  --image PATH       hill-shaded map with tracks (PPM)\n"
+        "  --repeat-run       run the same simulator twice and verify the results\n"
+        "                     match, proving no state leaks between runs\n"
         "  --quiet            summary only\n"
         "  --help\n";
 }
@@ -108,6 +110,7 @@ int main(int argc, char** argv) {
     std::string dump_map_path;
     long bench_queries = 0;
     bool quiet = false;
+    bool repeat_run = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -185,6 +188,7 @@ int main(int argc, char** argv) {
         else if (arg == "--csv")           csv_path = require_value(argc, argv, i);
         else if (arg == "--image")         image_path = require_value(argc, argv, i);
         else if (arg == "--quiet")         quiet = true;
+        else if (arg == "--repeat-run")    repeat_run = true;
         else if (arg == "--start") {
             const std::string v = require_value(argc, argv, i);
             const auto comma = v.find(',');
@@ -383,6 +387,22 @@ int main(int argc, char** argv) {
             << " deg, " << sim.altitude() << " m MSL\n";
 
         const RunSummary summary = sim.run(quiet ? nullptr : &out);
+
+        if (repeat_run) {
+            // Reusing a simulator must reproduce the first run exactly. The
+            // particle filter re-seeds its generator and clears its counters in
+            // initialize(); without that the RNG stream would carry over and a
+            // second run would silently differ.
+            const RunSummary again = sim.run(nullptr);
+            const bool same = again.final_pf_error == summary.final_pf_error &&
+                              again.final_dr_error == summary.final_dr_error &&
+                              again.final_bias_error == summary.final_bias_error &&
+                              again.ever_converged == summary.ever_converged;
+            out << "\nrepeat run    " << (same ? "IDENTICAL" : "DIVERGED")
+                << "   (" << summary.final_pf_error << " m then "
+                << again.final_pf_error << " m)\n";
+            if (!same) return 3;
+        }
 
         out << "\nresult\n"
             << "  dead reckoning final error   " << summary.final_dr_error << " m"

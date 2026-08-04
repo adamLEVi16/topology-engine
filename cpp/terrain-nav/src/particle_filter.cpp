@@ -6,7 +6,7 @@
 #include <stdexcept>
 
 ParticleFilter::ParticleFilter(const PfConfig& config, const TerrainMap& dem, std::uint64_t seed)
-    : config_(config), dem_(dem), rng_(seed) {
+    : config_(config), dem_(dem), seed_(seed), rng_(seed) {
     if (config_.count < 2) throw std::invalid_argument("particle count must be >= 2");
     if (config_.meas_sigma <= 0.0) throw std::invalid_argument("meas_sigma must be > 0");
     if (config_.process_noise <= 0.0) throw std::invalid_argument("process_noise must be > 0");
@@ -24,6 +24,16 @@ Vec2 ParticleFilter::sample_gaussian(const Mat2& covariance) {
 }
 
 void ParticleFilter::initialize(double x0, double y0) {
+    // Full reset, not just the particles. Re-seeding the generator and clearing
+    // the diagnostics is what makes a second initialize() on the same object
+    // reproduce the first exactly; without it the RNG stream would carry over
+    // and repeated runs would silently diverge.
+    rng_.seed(seed_);
+    nonfinite_queries_ = 0;
+    mean_eff_sigma_ = 0.0;
+    neff_ = 0.0;
+    resampled_ = false;
+
     // A uniform box for position: before the first terrain fix we genuinely have
     // no idea where in the uncertainty region we are, and a Gaussian prior would
     // understate the tails the filter has to search.
