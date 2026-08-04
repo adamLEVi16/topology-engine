@@ -47,7 +47,8 @@ Visual Studio C++ workload, and you must build `--config Release`.
 ./build/terrain_nav --terrain flat
 
 # acquire a fix, then fly onto a plain and lose it
-./build/terrain_nav --terrain mixed --heading 0 --start 2000,18000 --duration 280
+./build/terrain_nav --terrain mixed --dem-size 2000 --heading 0 \
+                    --start 2000,30000 --duration 450
 
 # a real SRTM tile
 ./build/terrain_nav --hgt N37W122.hgt
@@ -59,17 +60,17 @@ much of the US), or SRTM `.hgt` tiles, which this reads directly.
 ## What the run tells you
 
 ```
-    t(s)   dead-reckon terrain-aided      spread     N_eff   roughness
-     0.0         218.6         734.5       859.6      5000        68.3
-    20.0         205.0          18.5        39.3      4254        62.3
+    t(s)   dead-reckon terrain-aided     spread     N_eff  roughness
+     0.0         166.4         827.5      868.3      5000       94.6
+    20.0         182.4          24.6       42.8      1877       53.8
    ...
-   259.0         234.2           1.0        43.6      5000        86.5
+   599.0         462.8          23.5       47.5      2331       76.5
 
 result
-  dead reckoning final error   234.2 m   (peak 234.2 m)
-  terrain-aided final error      1.0 m
-  acquired fix at               11.0 s
-  mean error while holding it   22.2 m
+  dead reckoning final error   462.8 m   (peak 472.1 m)
+  terrain-aided final error     23.5 m
+  acquired fix at               17.0 s
+  mean error while holding it   30.4 m
 ```
 
 Dead reckoning walks away linearly with time, because the inertial unit has a
@@ -169,7 +170,7 @@ Practical consequences, all of which fall straight out of this:
 
 ## Validating it
 
-`validate.sh` tests behaviour rather than exit codes:
+`validate.sh` runs 27 behavioural checks rather than testing exit codes:
 
 1. Terrain-aided error beats dead reckoning by 4× or more over informative ground
 2. A fix is acquired from a ±3 km initial uncertainty box
@@ -485,50 +486,91 @@ whose amplitude, spatial scale, and anisotropy can be varied one at a time.
 terrain, flight due east, marginalised filter, no gradient inflation, 12 seeds
 per cell. Sensor noise is 9.5 m throughout.
 
+### A correction, and how it was found
+
+**The spatial-scale result previously reported here was wrong, and has been
+retracted.** It is left visible rather than deleted because the way it failed is
+more useful than the claim was.
+
+`error_injection.sh` swept 12 seeds per cell — but `--seed` drives sensor noise,
+the true inertial bias, and the starting offset. It does **not** drive the
+injected error field, which stayed at its default in every cell. So a sweep
+designed to measure the effect of wavelength actually measured one realisation
+of one error field, twelve times.
+
+Re-run with `ERROR_SEEDS` varied as well (8 error realisations × 12 flight seeds
+= 96 runs per cell), the numbers below replace the originals. The amplitude
+result survives and sharpens. The spatial-scale result does not survive at all.
+
 ### Amplitude — how much error can it absorb?
 
 | Injected | Map RMSE | Nav median | Diverged | Worst |
 |---|---|---|---|---|
-| 0 m (control) | 0.0 m | 15.8 m | 0/12 | 25.2 m |
-| 5 m | 5.0 m | 20.4 m | 0/12 | 32.3 m |
-| 10 m | 10.0 m | 25.4 m | 0/12 | 51.0 m |
-| 20 m | 19.9 m | 50.5 m | 0/12 | 79.0 m |
-| 40 m | 39.8 m | 174.9 m | **4/12** | 5 275 m |
-| 80 m | 79.7 m | 536.3 m | **9/12** | 1 958 m |
+| 0 m (control) | 0.0 m | 12.9 m | 0/96 | 19.2 m |
+| 5 m | 5.0 m | 11.9 m | 0/96 | 37.0 m |
+| 10 m | 10.0 m | 17.1 m | 1/96 | 1 825 m |
+| 20 m | 19.9 m | 38.0 m | **8/96** | 2 427 m |
+| 40 m | 39.8 m | 566.3 m | **60/96** | 5 547 m |
+| 80 m | 79.7 m | 2 112 m | **90/96** | 7 607 m |
 
-Clean and monotonic, with a sharp knee. The filter absorbs map error up to about
-**twice the sensor noise** with only graceful degradation, and the breakdown sits
-between 20 m and 40 m — roughly **2× to 4× sensor noise**. Below that it fails
-gradually; above it, it fails catastrophically.
+This holds, and pooling makes it cleaner than the single-realisation version.
+Sensor noise is 9.5 m. The filter absorbs map error up to roughly **twice the
+sensor noise** with graceful degradation, and the collapse between 20 m and 40 m
+is abrupt: divergence goes from 8/96 to 60/96 across a single doubling. Below
+the knee it degrades; above it, it falls over.
 
-### Spatial scale — misplaced hills, or fake boulders?
+### Spatial scale — RETRACTED
 
-Amplitude fixed at 20 m, so **every row has identical map RMSE**.
+Amplitude fixed at 20 m, so every row has identical map RMSE.
 
-| Wavelength | Map RMSE | Nav median | Diverged | Worst |
-|---|---|---|---|---|
-| 100 m | 20.0 m | 27.5 m | 1/12 | 1 841 m |
-| 250 m | 19.9 m | **76.5 m** | 0/12 | 89.2 m |
-| 500 m | 19.9 m | 50.5 m | 0/12 | 79.0 m |
-| 1 000 m | 19.9 m | 26.8 m | 1/12 | 2 242 m |
-| 2 500 m | 20.0 m | **17.2 m** | 0/12 | 46.5 m |
-| 5 000 m | 19.9 m | 20.4 m | 1/12 | 2 365 m |
+| Wavelength | Nav median | Diverged | Previously reported |
+|---|---|---|---|
+| 100 m | 32.1 m | 3/96 | 27.5 m |
+| 250 m | **29.8 m** | 4/96 | *76.5 m — "worst"* |
+| 500 m | 38.0 m | 8/96 | 50.5 m |
+| 1 000 m | 28.2 m | 15/96 | 26.8 m |
+| 2 500 m | **24.0 m** | 14/96 | *17.2 m — "almost free"* |
 
-**This is the result.** The same RMS error is **4.5× more damaging at 250 m than
-at 2 500 m**, and the dependence is not monotonic — it peaks in a middle band.
-At 2 500 m the injected error is almost free: 17.2 m against a perfect-map
-control of 15.8 m.
+The original claim was a 4.5× swing with an interior peak at 250 m, and that
+long-wavelength error is "almost free". Pooled over error realisations:
 
-So neither extreme is the problem. Fake boulders average out; a misplaced
-mountain is nearly harmless. What hurts is error at an intermediate scale.
+- The swing is **1.6×**, not 4.5×.
+- The interior peak is gone. 250 m is now among the **least** damaging, not the
+  most.
+- Divergence **rises** with wavelength — 3, 4, 8, 15, 14 — so the long
+  wavelengths that were called nearly harmless have the *worst* tail behaviour.
 
-The reading consistent with the earlier uniform-shift result is that
-long-wavelength error is **common-mode** across the particle cloud, and
-log-sum-exp cancels common offsets exactly; short-wavelength error decorrelates
-within the cloud and behaves like extra white noise the sensor model already
-tolerates; only intermediate-scale error varies coherently *across* the cloud in
-a way that differentially misweights particles. That is interpretation, not
-measurement — what is measured is the 4.5× swing at fixed RMSE.
+Every direction of the original finding reverses. The honest residue is that
+wavelength has a mild and unreliable effect on median error at fixed RMSE, and
+the useful part of that section — "elevation RMSE does not predict navigation
+performance" — is now supported only by the amplitude knee and the grid-versus-
+neural comparison, not by this sweep.
+
+**The methodological lesson generalises past this project.** The confound was
+not subtle once named: a sweep that varies one seed and calls it replication
+measures that seed's realisation, not the effect under study. The same
+scepticism was already applied to the isotropy sweep below, which was flagged as
+confounded and left inconclusive — it simply was not applied one section
+earlier. Whenever a result rests on a single realisation of a random field, vary
+that field before believing it.
+
+### What survived the same test
+
+The other headline claims were re-checked against the axis they had never
+varied. Bias-estimation accuracy across **6 terrain realisations × 6 flight
+seeds**, which the original tables never varied:
+
+| Filter | Particles | Mean bias error | Worst |
+|---|---|---|---|
+| bootstrap | 5 000 | 0.8732 m/s | 2.430 m/s |
+| bootstrap | 20 000 | 0.3811 m/s | 0.650 m/s |
+| **marginalised** | **1 000** | **0.1308 m/s** | 0.276 m/s |
+| **marginalised** | **5 000** | **0.1009 m/s** | 0.208 m/s |
+
+The Rao-Blackwellisation result holds. The marginalised filter at 1 000
+particles still beats the bootstrap at 20 000 by 2.9×, and at equal particle
+count the margin widened from 6.1× to 8.7×. Worst cases separate cleanly. This
+is not a property of one map.
 
 ### Isotropy — along-track versus cross-track
 
