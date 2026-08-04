@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <iomanip>
@@ -87,6 +88,60 @@ const char* require_value(int argc, char** argv, int& i) {
     return argv[++i];
 }
 
+// std::atof happily returns NaN for "nan" and infinity for "inf", and silently
+// yields 0 for unparseable text. A NaN relief makes an entirely NaN terrain that
+// still produces a plausible-looking final error, because every particle then
+// takes the same non-finite penalty and the run quietly degenerates into dead
+// reckoning. Numbers that reach the physics get parsed strictly instead.
+double require_finite(int argc, char** argv, int& i, double lo, double hi) {
+    const std::string flag = argv[i];
+    const char* raw = require_value(argc, argv, i);
+    char* end = nullptr;
+    const double v = std::strtod(raw, &end);
+    if (end == raw || *end != '\0' || !std::isfinite(v) || v < lo || v > hi) {
+        std::cerr << "error: " << flag << " expects a finite number in ["
+                  << lo << ", " << hi << "], got '" << raw << "'\n";
+        std::exit(2);
+    }
+    return v;
+}
+
+long require_int(int argc, char** argv, int& i, long lo, long hi) {
+    const std::string flag = argv[i];
+    const char* raw = require_value(argc, argv, i);
+    char* end = nullptr;
+    const long v = std::strtol(raw, &end, 10);
+    if (end == raw || *end != '\0' || v < lo || v > hi) {
+        std::cerr << "error: " << flag << " expects an integer in [" << lo << ", "
+                  << hi << "], got '" << raw << "'\n";
+        std::exit(2);
+    }
+    return v;
+}
+
+// Parses "X,Y" with both components validated.
+bool parse_pair(const std::string& flag, const char* raw, double lo, double hi,
+                double& out_x, double& out_y) {
+    const std::string v = raw;
+    const auto comma = v.find(',');
+    if (comma == std::string::npos) {
+        std::cerr << "error: " << flag << " expects X,Y\n";
+        return false;
+    }
+    for (const auto& part : {v.substr(0, comma), v.substr(comma + 1)}) {
+        char* end = nullptr;
+        const double d = std::strtod(part.c_str(), &end);
+        if (end == part.c_str() || *end != '\0' || !std::isfinite(d) || d < lo || d > hi) {
+            std::cerr << "error: " << flag << " component '" << part
+                      << "' is not a finite number in [" << lo << ", " << hi << "]\n";
+            return false;
+        }
+    }
+    out_x = std::strtod(v.substr(0, comma).c_str(), nullptr);
+    out_y = std::strtod(v.substr(comma + 1).c_str(), nullptr);
+    return true;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -116,37 +171,34 @@ int main(int argc, char** argv) {
         const std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") { print_usage(argv[0]); return 0; }
         else if (arg == "--terrain")       terrain_kind = require_value(argc, argv, i);
-        else if (arg == "--dem-size")      dem_size = std::atoi(require_value(argc, argv, i));
+        else if (arg == "--dem-size")      dem_size = static_cast<int>(require_int(argc, argv, i, 2, 100000));
         else if (arg == "--dem-spacing") {
-            dem_spacing = std::atof(require_value(argc, argv, i));
+            dem_spacing = require_finite(argc, argv, i, 1e-6, 1e6);
             spacing_set = true;
         }
         else if (arg == "--hgt")           hgt_path = require_value(argc, argv, i);
-        else if (arg == "--terrain-seed")  terrain_seed = static_cast<unsigned>(std::atoi(require_value(argc, argv, i)));
-        else if (arg == "--speed")         scenario.speed = std::atof(require_value(argc, argv, i));
-        else if (arg == "--heading")       scenario.heading_deg = std::atof(require_value(argc, argv, i));
-        else if (arg == "--duration")      scenario.duration = std::atof(require_value(argc, argv, i));
-        else if (arg == "--dt")            scenario.dt = std::atof(require_value(argc, argv, i));
-        else if (arg == "--radar-sigma")   scenario.radar_sigma = std::atof(require_value(argc, argv, i));
-        else if (arg == "--baro-sigma")    scenario.baro_sigma = std::atof(require_value(argc, argv, i));
-        else if (arg == "--ins-bias")      scenario.ins_bias = std::atof(require_value(argc, argv, i));
-        else if (arg == "--relief")        relief = std::atof(require_value(argc, argv, i));
+        else if (arg == "--terrain-seed")  terrain_seed = static_cast<unsigned>(require_int(argc, argv, i, 0, 4294967295L));
+        else if (arg == "--speed")         scenario.speed = require_finite(argc, argv, i, 0.0, 1e5);
+        else if (arg == "--heading")       scenario.heading_deg = require_finite(argc, argv, i, -3600.0, 3600.0);
+        else if (arg == "--duration")      scenario.duration = require_finite(argc, argv, i, 0.0, 1e7);
+        else if (arg == "--dt")            scenario.dt = require_finite(argc, argv, i, 1e-6, 1e5);
+        else if (arg == "--radar-sigma")   scenario.radar_sigma = require_finite(argc, argv, i, 0.0, 1e6);
+        else if (arg == "--baro-sigma")    scenario.baro_sigma = require_finite(argc, argv, i, 0.0, 1e6);
+        else if (arg == "--ins-bias")      scenario.ins_bias = require_finite(argc, argv, i, 0.0, 1e5);
+        else if (arg == "--relief")        relief = require_finite(argc, argv, i, 0.0, 1e6);
         else if (arg == "--gradient-inflation") pf.inflate_on_gradient = true;
         else if (arg == "--neural")        neural_path = require_value(argc, argv, i);
-        else if (arg == "--error-amplitude")  err_amplitude = std::atof(require_value(argc, argv, i));
-        else if (arg == "--error-wavelength") err_wavelength = std::atof(require_value(argc, argv, i));
-        else if (arg == "--error-aspect")     err_aspect = std::atof(require_value(argc, argv, i));
-        else if (arg == "--error-seed")       err_seed = static_cast<unsigned>(std::atoi(require_value(argc, argv, i)));
+        else if (arg == "--error-amplitude")  err_amplitude = require_finite(argc, argv, i, 0.0, 1e6);
+        else if (arg == "--error-wavelength") err_wavelength = require_finite(argc, argv, i, 1e-6, 1e9);
+        else if (arg == "--error-aspect")     err_aspect = require_finite(argc, argv, i, 1e-6, 1e6);
+        else if (arg == "--error-seed")       err_seed = static_cast<unsigned>(require_int(argc, argv, i, 0, 4294967295L));
         else if (arg == "--dump-dem")      dump_path = require_value(argc, argv, i);
         else if (arg == "--map-rmse")      do_rmse = true;
         else if (arg == "--dump-map")      dump_map_path = require_value(argc, argv, i);
-        else if (arg == "--bench-map")     bench_queries = std::atol(require_value(argc, argv, i));
+        else if (arg == "--bench-map")     bench_queries = require_int(argc, argv, i, 1, 100000000L);
         else if (arg == "--probe") {
-            const std::string v = require_value(argc, argv, i);
-            const auto comma = v.find(',');
-            if (comma == std::string::npos) { std::cerr << "error: --probe expects X,Y\n"; return 2; }
-            probe_x = std::atof(v.substr(0, comma).c_str());
-            probe_y = std::atof(v.substr(comma + 1).c_str());
+            if (!parse_pair(arg, require_value(argc, argv, i), -1e9, 1e9,
+                            probe_x, probe_y)) return 2;
             do_probe = true;
         }
         else if (arg == "--map-interp") {
@@ -155,22 +207,16 @@ int main(int argc, char** argv) {
             else if (v == "bicubic")  map_interp = Dem::Interp::Bicubic;
             else { std::cerr << "error: --map-interp expects bilinear or bicubic\n"; return 2; }
         }
-        else if (arg == "--map-downsample") map_downsample = std::atoi(require_value(argc, argv, i));
-        else if (arg == "--map-h-sigma")   pf.map_horizontal_sigma = std::atof(require_value(argc, argv, i));
-        else if (arg == "--map-v-sigma")   pf.map_vertical_sigma = std::atof(require_value(argc, argv, i));
+        else if (arg == "--map-downsample") map_downsample = static_cast<int>(require_int(argc, argv, i, 1, 10000));
+        else if (arg == "--map-h-sigma")   pf.map_horizontal_sigma = require_finite(argc, argv, i, 0.0, 1e6);
+        else if (arg == "--map-v-sigma")   pf.map_vertical_sigma = require_finite(argc, argv, i, 0.0, 1e6);
         else if (arg == "--map-shift") {
-            const std::string v = require_value(argc, argv, i);
-            const auto comma = v.find(',');
-            if (comma == std::string::npos) {
-                std::cerr << "error: --map-shift expects X,Y\n";
-                return 2;
-            }
-            pf.map_shift_x = std::atof(v.substr(0, comma).c_str());
-            pf.map_shift_y = std::atof(v.substr(comma + 1).c_str());
+            if (!parse_pair(arg, require_value(argc, argv, i), -1e9, 1e9,
+                            pf.map_shift_x, pf.map_shift_y)) return 2;
         }
-        else if (arg == "--bias-prior")    pf.bias_prior = std::atof(require_value(argc, argv, i));
-        else if (arg == "--bias-walk")     pf.bias_walk = std::atof(require_value(argc, argv, i));
-        else if (arg == "--particles")     pf.count = std::atoi(require_value(argc, argv, i));
+        else if (arg == "--bias-prior")    pf.bias_prior = require_finite(argc, argv, i, 0.0, 1e5);
+        else if (arg == "--bias-walk")     pf.bias_walk = require_finite(argc, argv, i, 0.0, 1e5);
+        else if (arg == "--particles")     pf.count = static_cast<int>(require_int(argc, argv, i, 2, 100000000L));
         else if (arg == "--filter") {
             const std::string v = require_value(argc, argv, i);
             if      (v == "pf2d") pf.mode = FilterMode::Position2D;
@@ -181,23 +227,17 @@ int main(int argc, char** argv) {
                 return 2;
             }
         }
-        else if (arg == "--init-radius")   pf.init_radius = std::atof(require_value(argc, argv, i));
-        else if (arg == "--meas-sigma")    pf.meas_sigma = std::atof(require_value(argc, argv, i));
-        else if (arg == "--process-noise") pf.process_noise = std::atof(require_value(argc, argv, i));
-        else if (arg == "--seed")          scenario.seed = std::strtoull(require_value(argc, argv, i), nullptr, 10);
+        else if (arg == "--init-radius")   pf.init_radius = require_finite(argc, argv, i, 0.0, 1e9);
+        else if (arg == "--meas-sigma")    pf.meas_sigma = require_finite(argc, argv, i, 1e-6, 1e6);
+        else if (arg == "--process-noise") pf.process_noise = require_finite(argc, argv, i, 1e-9, 1e6);
+        else if (arg == "--seed")          scenario.seed = static_cast<std::uint64_t>(require_int(argc, argv, i, 0, 9007199254740992L));
         else if (arg == "--csv")           csv_path = require_value(argc, argv, i);
         else if (arg == "--image")         image_path = require_value(argc, argv, i);
         else if (arg == "--quiet")         quiet = true;
         else if (arg == "--repeat-run")    repeat_run = true;
         else if (arg == "--start") {
-            const std::string v = require_value(argc, argv, i);
-            const auto comma = v.find(',');
-            if (comma == std::string::npos) {
-                std::cerr << "error: --start expects X,Y\n";
-                return 2;
-            }
-            scenario.start_x = std::atof(v.substr(0, comma).c_str());
-            scenario.start_y = std::atof(v.substr(comma + 1).c_str());
+            if (!parse_pair(arg, require_value(argc, argv, i), -1e9, 1e9,
+                            scenario.start_x, scenario.start_y)) return 2;
         } else {
             std::cerr << "error: unknown option '" << arg << "' (try --help)\n";
             return 2;
@@ -402,6 +442,12 @@ int main(int argc, char** argv) {
                 << "   (" << summary.final_pf_error << " m then "
                 << again.final_pf_error << " m)\n";
             if (!same) return 3;
+        }
+
+        if (sim.filter().nonfinite_queries() > 0) {
+            out << "\nWARNING: the map returned a non-finite elevation "
+                << sim.filter().nonfinite_queries()
+                << " times. The map is corrupt and these results are meaningless.\n";
         }
 
         out << "\nresult\n"
