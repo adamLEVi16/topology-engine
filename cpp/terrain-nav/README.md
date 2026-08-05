@@ -463,21 +463,34 @@ The safest statement the evidence supports is the narrow one:
 representations in the wrong order.** Anything beyond that would be a story rather
 than a finding.
 
-### Finding 5: the cheap idea won
+### Finding 5: bicubic helps reliably, but not the way first reported — CORRECTED
 
-Switching interpolation from bilinear to bicubic — no training, no extra bytes,
-about 50 ns more per query — cut median error from 72.5 m to 62.4 m and the worst
-case from **771 m to 89 m**. That 8.6× reduction in tail risk is the largest
-single improvement in the table, and it came from reading bytes that were already
-there more carefully.
+The original claim was that switching interpolation from bilinear to bicubic cut
+the worst case from **771 m to 89 m**, an 8.6x reduction in tail risk, and that
+this was the largest single improvement in the project.
 
-The neural result is a genuine negative result, and worth having: at these budgets
-an implicit neural terrain map is *not* the win it looks like on reconstruction
-metrics. Note also that the stated motivation — memory-constrained micro-drones —
-is exactly where a 300× compute penalty is least affordable, since such platforms
-are compute-constrained too.
+That was measured across 8 flight seeds on **one terrain**. Re-run across 6
+terrain realisations x 8 flight seeds:
 
-## Map-error injection: what the filter actually cares about
+| Interpolation | Median | Worst | Diverged |
+|---|---|---|---|
+| bilinear | 58.2 m | 4 014 m | 4/48 |
+| bicubic | **40.0 m** | **8 922 m** | 3/48 |
+
+**The tail-risk claim does not survive.** Bicubic's worst case is worse, not
+better, and the divergence counts are indistinguishable. The 771 to 89 m figure
+was one terrain's luck.
+
+**The accuracy claim does survive, and strongly.** Pairing each run against the
+same terrain and the same flight seed — which removes the variance that swamped
+the unpaired comparison — bicubic wins **37 of 48 pairs**, a one-sided sign test
+p = 0.0001. Median error improves 58.2 m to 40.0 m, about 30 %.
+
+So the honest statement is: bicubic interpolation reliably improves median
+accuracy by roughly a third, for no extra storage and about 50 ns per query. It
+does not protect against catastrophic divergence, and nothing here does.
+
+## Map-error injection## Map-error injection: what the filter actually cares about
 
 Since elevation RMSE fails to predict navigation performance, the question is
 what does. Comparing whole representations confounds many properties at once, so
