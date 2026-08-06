@@ -3,7 +3,7 @@
 **Point it at a company's website. Get back a short brief written for someone thinking about buying the business.**
 
 ```
-$ dealscope analyze kettlewind.com
+$ python -m dealscope analyze kettlewind.com
 ```
 
 ```
@@ -65,30 +65,77 @@ Three design rules follow from that:
 
 ## Install
 
+Python 3.10+. No API keys required.
+Dependencies: `requests`, `beautifulsoup4`, `lxml`, `Jinja2`.
+
 ```bash
-cd dealscope
+git clone https://github.com/adamLEVi16/topology-engine.git
+cd topology-engine/dealscope
 python -m pip install -e ".[dev]"
 ```
 
-Python 3.10+. Dependencies: `requests`, `beautifulsoup4`, `lxml`, `Jinja2`.
-No API keys required.
+**The install step is not optional** — `dealscope` is a command that only comes
+into existence once pip creates it.
+
+### Running it
+
+Use the module form. It works everywhere, whether or not Python's script
+directory is on your PATH:
+
+```bash
+python -m dealscope analyze acme.com
+python -m dealscope serve
+```
+
+The short `dealscope ...` form does the same thing, but only if pip's script
+directory is on PATH — which on Windows it frequently is not.
+
+<details>
+<summary><strong>Windows / PowerShell notes</strong></summary>
+
+Use `py` instead of `python` if `python` opens the Microsoft Store:
+
+```powershell
+py -m pip install -e ".[dev]"
+py -m dealscope serve
+```
+
+`dealscope : The term 'dealscope' is not recognized` means one of two things:
+you have not run the `pip install` yet, or pip's `Scripts` folder is not on
+your PATH. Either way, `py -m dealscope ...` sidesteps it.
+
+To run with no install at all, point Python at the source directory — from
+inside `topology-engine\dealscope`:
+
+```powershell
+python -m pip install requests beautifulsoup4 lxml Jinja2
+$env:PYTHONPATH = "src"
+python -m dealscope serve
+```
+
+Check your version first — this needs 3.10 or newer:
+
+```powershell
+py --version
+```
+</details>
 
 ## Use
 
 ```bash
 # a readable summary in the terminal
-dealscope analyze acme.com
+python -m dealscope analyze acme.com
 
 # other formats
-dealscope analyze acme.com --format md   --output brief.md
-dealscope analyze acme.com --format html --output brief.html
-dealscope analyze acme.com --format json --output brief.json
+python -m dealscope analyze acme.com --format md   --output brief.md
+python -m dealscope analyze acme.com --format html --output brief.html
+python -m dealscope analyze acme.com --format json --output brief.json
 
 # several at once, one file each
-dealscope analyze acme.com beta.io gamma.co --format md --output ./briefs/
+python -m dealscope analyze acme.com beta.io gamma.co --format md --output ./briefs/
 
 # local web UI — paste a domain, read the brief
-dealscope serve
+python -m dealscope serve
 ```
 
 Useful flags: `--max-pages` (default 20), `--delay` (seconds between requests to
@@ -158,7 +205,7 @@ the prose.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-...
-dealscope analyze acme.com --llm
+python -m dealscope analyze acme.com --llm
 ```
 
 ## Known limits
