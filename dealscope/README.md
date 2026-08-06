@@ -184,9 +184,14 @@ Every request:
 
 - identifies itself with a descriptive `User-Agent`,
 - fetches and honours `robots.txt`, skipping anything disallowed,
+- honours `Crawl-delay` / `Request-rate` when a site asks for a slower pace, and
+  **reads fewer pages rather than crawling for ten minutes** — the brief says so
+  when that happens,
+- honours `Retry-After` on `429` / `503` instead of guessing with backoff,
 - waits a configurable delay between hits to the same host (1s by default),
 - caps how many pages it reads (20) and how many bytes per page,
-- is cached on disk for 24 hours, so re-running a brief costs the site nothing.
+- is cached on disk for 24 hours and pruned by age and size, so re-running a
+  brief costs the site nothing.
 
 It reads only publicly served HTML. It never logs in, submits a form, solves a
 challenge, or touches anything behind authentication. There is deliberately no
@@ -208,10 +213,38 @@ export ANTHROPIC_API_KEY=sk-...
 python -m dealscope analyze acme.com --llm
 ```
 
+## Client-rendered sites
+
+By default dealscope reads server HTML. Many sites build their navigation and
+footer in the browser, which is why a brief can come back thin.
+
+Install the optional browser and it renders those pages properly:
+
+```bash
+python -m pip install -e ".[js]"
+playwright install chromium
+```
+
+Rendering is a **fallback, not the default path**: it fires only when a page
+comes back too thin to be the whole page, or when several standard pages are
+still missing after the first pass. Everything else is unchanged — `robots.txt`
+is still checked before a render, and the delays still apply. If Playwright or
+its browser is missing, rendering is skipped, the static HTML stands, and the
+brief records that its view was partial. Turn it off entirely with `--no-js`.
+
+If a browser is already on the machine but Playwright rejects its version, point
+at it directly:
+
+```bash
+export DEALSCOPE_CHROMIUM=/path/to/chrome
+```
+
+Corporate proxies are picked up from `HTTPS_PROXY` / `NO_PROXY`.
+
 ## Known limits
 
-- **Server-rendered HTML only.** Sites that assemble navigation in the browser
-  yield less. The brief flags when it detects this rather than reporting a thin
+- **Server-rendered HTML only, unless you install the browser** (above). The
+  brief flags when it detects client-side rendering rather than reporting a thin
   result as a finding.
 - **English-language heuristics.** Vocabulary matching is tuned for English
   sites; other languages will fall back to structured data and produce a
@@ -231,4 +264,5 @@ python -m dealscope analyze acme.com --llm
 python -m pytest
 ```
 
-54 tests, all offline against synthetic fixture sites — no network required.
+89 tests. Most run offline against synthetic fixture sites; the rendering tests
+use a local HTTP server and skip when no browser is installed.

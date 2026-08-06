@@ -114,6 +114,9 @@ PLAN_WORDS = re.compile(
 # accepted as a plan name even when it is not in the vocabulary above.
 GENERIC_PLAN_LINE = re.compile(r"^[A-Z][A-Za-z&+/'’ -]{1,22}$")
 
+# A pricing table puts the price on its own line. Anything longer is a sentence.
+TABLE_PRICE_MAX_CHARS = 40
+
 NAV_WORDS = {
     "about", "blog", "careers", "contact", "company", "cookies", "docs",
     "documentation", "download", "faq", "features", "help", "home", "legal",
@@ -210,19 +213,34 @@ def _extract_plans(pages: list[Page]) -> tuple[list[str], list[Evidence]]:
 
     for page in pages:
         lines = page.text.splitlines()
-        price_lines = {i for i, line in enumerate(lines) if PRICE.search(line)}
+        # Only prices that stand alone count as table prices. A price mentioned
+        # inside a sentence is FAQ prose, and the words beside it are features,
+        # not tiers — that is how "Timesheet" became a Basecamp "plan".
+        price_lines = {
+            i
+            for i, line in enumerate(lines)
+            if PRICE.search(line) and len(line) <= TABLE_PRICE_MAX_CHARS
+        }
         if not price_lines:
             continue
         for index, line in enumerate(lines):
             if len(line) > 30 or PRICE.search(line):
                 continue
-            distance = min((abs(index - p) for p in price_lines), default=99)
-            # Known tier words tolerate a little distance; unknown ones must sit
-            # immediately beside the price to count.
             if PLAN_WORDS.match(line):
-                if distance > 4:
+                # "Free", "Enterprise" and friends are unambiguous; being near a
+                # price on either side is enough.
+                if min((abs(index - p) for p in price_lines), default=99) > 4:
                     continue
-            elif not (distance <= 2 and _generic_plan_name(line)):
+            elif _generic_plan_name(line):
+                # An unrecognised word is only a tier if it heads a pricing card
+                # on a real pricing page — that is, the price follows it, as in
+                # "Practice / £79". Without that, a shop's "Spend $50, get free
+                # Shipping" banner reads as two pricing tiers.
+                if page.role != ROLE_PRICING:
+                    continue
+                if not any(index < p <= index + 3 for p in price_lines):
+                    continue
+            else:
                 continue
             label = " ".join(line.split()).title()
             if label.lower() not in {n.lower() for n in names}:

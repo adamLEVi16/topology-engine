@@ -103,6 +103,7 @@ class Page:
     headers: dict[str, str] = field(default_factory=dict)
     fetched_at: datetime | None = None
     from_cache: bool = False
+    rendered: bool = False
     error: str | None = None
 
     @property
@@ -117,6 +118,7 @@ class Page:
             "status": self.status,
             "title": self.title,
             "words": len(self.text.split()),
+            "rendered": self.rendered,
             "error": self.error,
         }
 

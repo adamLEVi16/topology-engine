@@ -25,11 +25,15 @@ class FakeFetcher:
         self.notes: list[str] = []
         self.robots_blocked: list[str] = []
         self.fetch_count = 0
+        self.renderer = None
 
     def resolve_home(self, domain: str) -> Page:
         return self.get(f"https://{domain}/", role="home")
 
-    def get(self, url: str, role: str = "other") -> Page:
+    def delay_for(self, url: str) -> float:
+        return 0.0
+
+    def get(self, url: str, role: str = "other", force_render: bool = False) -> Page:
         self.fetch_count += 1
         html = self.site.get(url) or self.site.get(url.rstrip("/"))
         if html is None:

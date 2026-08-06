@@ -21,6 +21,11 @@ dependencies = [
 dev = [
   "pytest>=8.0",
 ]
+# Headless rendering for client-rendered sites. Optional: without it dealscope
+# reads server HTML only and says so in the brief.
+js = [
+  "playwright>=1.40",
+]
 
 [project.scripts]
 dealscope = "dealscope.cli:main"

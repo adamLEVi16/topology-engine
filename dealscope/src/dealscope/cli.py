@@ -62,6 +62,10 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--timeout", type=float, default=Config.timeout,
                      help=f"per-request timeout in seconds (default: {Config.timeout})")
     run.add_argument("--no-cache", action="store_true", help="ignore and bypass the on-disk cache")
+    run.add_argument(
+        "--no-js", action="store_true",
+        help="never fall back to a headless browser on client-rendered pages",
+    )
     run.add_argument("--llm", action="store_true",
                      help="rewrite the summary with Claude (needs ANTHROPIC_API_KEY)")
     run.add_argument("--llm-model", default=Config.llm_model,
@@ -73,6 +77,8 @@ def _build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--port", type=int, default=8765, help="port (default: 8765)")
     serve.add_argument("--max-pages", type=int, default=Config.max_pages)
     serve.add_argument("--delay", type=float, default=Config.delay)
+    serve.add_argument("--no-js", action="store_true",
+                       help="never fall back to a headless browser")
     serve.add_argument("--llm", action="store_true",
                        help="use Claude for the summary prose (needs ANTHROPIC_API_KEY)")
 
@@ -89,6 +95,8 @@ def _config_from(args: argparse.Namespace) -> Config:
         config.timeout = args.timeout
     if getattr(args, "no_cache", False):
         config.use_cache = False
+    if getattr(args, "no_js", False):
+        config.use_js = False
     if hasattr(args, "llm_model"):
         config.llm_model = args.llm_model
     return config

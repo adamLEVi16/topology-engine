@@ -34,6 +34,18 @@ INDUSTRY_KEYWORDS: dict[str, tuple[str, ...]] = {
     "Nonprofit": ("donate", "nonprofit", "501(c)(3)", "our mission is to", "charity"),
 }
 
+# The revenue model is decided from far stronger evidence than loose keyword
+# counting, so it leads the sector description. Without this, a shoe shop whose
+# homepage happens to say "brand" and "shipping" reads as "marketing / logistics".
+MODEL_TO_INDUSTRY = {
+    "saas": "SaaS / software",
+    "ecommerce": "E-commerce / retail",
+    "services": "Professional services",
+    "marketplace": "Marketplace / platform",
+    "media": "Media / publishing",
+    "hardware": "Hardware / physical products",
+}
+
 _SEPARATORS = re.compile(r"\s[|–—\-·:>]+\s")
 _BOILERPLATE = re.compile(
     r"^(home|welcome|homepage|official site|official website|untitled)$", re.I
@@ -89,7 +101,9 @@ def _first_paragraph(page: Page, min_len: int = 120) -> str:
     return ""
 
 
-def extract(pages: list[Page], domain: str) -> tuple[dict[str, Any], list[Evidence]]:
+def extract(
+    pages: list[Page], domain: str, business_model: str = ""
+) -> tuple[dict[str, Any], list[Evidence]]:
     home = next((p for p in pages if p.role == ROLE_HOME and p.ok), None)
     about_pages = st.pages_by_role(pages, ROLE_ABOUT)
     evidence: list[Evidence] = []
@@ -232,7 +246,13 @@ def extract(pages: list[Page], domain: str) -> tuple[dict[str, Any], list[Eviden
         if count >= 2:
             hits.append((label, count))
     hits.sort(key=lambda kv: -kv[1])
-    data["industry_tags"] = [label for label, _ in hits[:3]]
+    tags = [label for label, _ in hits[:3]]
+
+    seeded = MODEL_TO_INDUSTRY.get(business_model)
+    if seeded:
+        tags = [seeded] + [tag for tag in tags if tag != seeded]
+
+    data["industry_tags"] = tags[:3]
     if data["industry_tags"]:
         evidence.append(
             Evidence(

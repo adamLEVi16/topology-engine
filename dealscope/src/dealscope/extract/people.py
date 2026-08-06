@@ -238,6 +238,50 @@ def _people_from_prose(
     return people, evidence
 
 
+CUSTOMER_CONTEXT = re.compile(
+    r"(customers?|clients?|trusted by|used by|works? with|partners?|brands?|"
+    r"case stud|testimonial|as seen (in|on)|featured (in|on)|our work)",
+    re.I,
+)
+
+
+def _logo_wall_images(soup, min_group: int = 3) -> set[int]:
+    """Images belonging to a group of similar sibling images.
+
+    A customer logo strip is always a row of several small images. A lone
+    image with a short alt is a video thumbnail or an illustration — which is
+    how "Walkthrough" ended up listed as a Basecamp customer.
+    """
+    accepted: set[int] = set()
+    for img in soup.find_all("img", alt=True):
+        node = img
+        for _ in range(3):
+            node = node.parent
+            if node is None:
+                break
+            group = [
+                candidate
+                for candidate in node.find_all("img", alt=True)
+                if len(candidate.get("alt", "").strip()) <= 40
+            ]
+            if len(group) >= min_group:
+                accepted.update(id(candidate) for candidate in group)
+                break
+    return accepted
+
+
+def _in_customer_context(img) -> bool:
+    """Does an ancestor of this image talk about customers or clients?"""
+    node = img
+    for _ in range(4):
+        node = node.parent
+        if node is None:
+            return False
+        if CUSTOMER_CONTEXT.search(node.get_text(" ", strip=True)[:400]):
+            return True
+    return False
+
+
 def _customers_from_logos(
     pages: list[Page], limit: int, exclude: set[str]
 ) -> tuple[list[str], list[Evidence]]:
@@ -248,7 +292,14 @@ def _customers_from_logos(
 
     for page in pages:
         soup = make_soup(page.html)
+        # A dedicated customers page is all context; elsewhere the image has to
+        # earn its place by sitting in a logo wall or under customer wording.
+        whole_page_is_customers = page.role == ROLE_CUSTOMERS
+        wall = set() if whole_page_is_customers else _logo_wall_images(soup)
+
         for img in soup.find_all("img", alt=True):
+            if not whole_page_is_customers and id(img) not in wall and not _in_customer_context(img):
+                continue
             alt = " ".join(img["alt"].split())
             if not alt or len(alt) > 40 or GENERIC_ALT.match(alt):
                 continue

@@ -38,9 +38,20 @@ class Config:
     respect_robots: bool = True
     verify_tls: bool = True
 
+    # Politeness ceilings. robots.txt may ask for a long crawl delay; we honour
+    # it up to these bounds rather than either ignoring it or stalling forever.
+    max_crawl_delay: float = 15.0
+    max_retry_after: float = 30.0
+    polite_time_budget: float = 120.0
+
+    # Headless rendering (optional; needs the "js" extra plus a browser binary)
+    use_js: bool = True
+    js_wait_ms: int = 1200
+
     # Caching
     cache_dir: Path = field(default_factory=_default_cache_dir)
     cache_ttl: int = 86_400  # 24h
+    cache_max_bytes: int = 200_000_000
     use_cache: bool = True
 
     # Analysis

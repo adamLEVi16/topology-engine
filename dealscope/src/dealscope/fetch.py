@@ -21,12 +21,14 @@ import re
 import time
 import urllib.robotparser
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urljoin, urlparse, urlunparse
 
 import requests
 from bs4 import BeautifulSoup
 
+from .browser import Renderer
 from .config import Config
 from .models import Page
 
@@ -130,19 +132,76 @@ class Fetcher:
         )
         self._last_hit: dict[str, float] = {}
         self._robots: dict[str, urllib.robotparser.RobotFileParser | None] = {}
+        self._delays: dict[str, float] = {}
         self.notes: list[str] = []
         self.robots_blocked: list[str] = []
         self.fetch_count = 0
+        self.render_count = 0
+
+        # Rendering stays off until somebody asks for it; constructing the
+        # renderer is cheap because the browser starts lazily.
+        self.renderer: Renderer | None = None
+        if self.config.use_js:
+            self.renderer = Renderer(
+                timeout=self.config.timeout,
+                user_agent=self.config.user_agent,
+                wait_ms=self.config.js_wait_ms,
+                ignore_https_errors=not self.config.verify_tls,
+            )
+
+        if self.config.use_cache:
+            prune_cache(self.config.cache_dir, self.config.cache_ttl, self.config.cache_max_bytes)
 
     # -- politeness --
 
-    def _wait(self, host: str) -> None:
+    def _wait(self, host: str, delay: float | None = None) -> None:
+        wait_for = self.config.delay if delay is None else delay
         last = self._last_hit.get(host)
         if last is not None:
-            gap = self.config.delay - (time.monotonic() - last)
+            gap = wait_for - (time.monotonic() - last)
             if gap > 0:
                 time.sleep(gap)
         self._last_hit[host] = time.monotonic()
+
+    def delay_for(self, url: str) -> float:
+        """Seconds to wait between requests to this host.
+
+        ``robots.txt`` may ask for more than our default via ``Crawl-delay`` or
+        ``Request-rate``. Asking is the site's prerogative, so the larger of the
+        two values wins.
+        """
+        parts = urlparse(url)
+        key = f"{parts.scheme}://{parts.netloc}"
+        if key in self._delays:
+            return self._delays[key]
+
+        delay = self.config.delay
+        parser = self._robots_for(url)
+        if parser is not None:
+            requested: list[float] = []
+            try:
+                value = parser.crawl_delay(self.config.user_agent)
+                if value:
+                    requested.append(float(value))
+            except Exception:
+                pass
+            try:
+                rate = parser.request_rate(self.config.user_agent)
+                if rate and rate.requests:
+                    requested.append(float(rate.seconds) / float(rate.requests))
+            except Exception:
+                pass
+            if requested:
+                asked = max(requested)
+                if asked > delay:
+                    delay = min(asked, self.config.max_crawl_delay)
+                    self.notes.append(
+                        f"{parts.netloc} requests a {asked:g}s crawl delay via robots.txt; "
+                        f"using {delay:g}s between requests"
+                    )
+
+        self._delays[key] = delay
+        return delay
 
     def _robots_for(self, url: str) -> urllib.robotparser.RobotFileParser | None:
         parts = urlparse(url)
@@ -195,10 +254,13 @@ class Fetcher:
         host = re.sub(r"[^a-z0-9.-]+", "_", (urlparse(url).hostname or "unknown").lower())
         return self.config.cache_dir / host / f"{digest}.json"
 
-    def _read_cache(self, url: str) -> Page | None:
+    def _read_cache(self, key: str) -> Page | None:
         if not self.config.use_cache:
             return None
-        path = self._cache_path(url)
+        # Rendered copies are cached under "<url>|js"; the page itself keeps the
+        # plain URL.
+        url = key.split("|", 1)[0]
+        path = self._cache_path(key)
         try:
             if not path.exists():
                 return None
@@ -219,12 +281,13 @@ class Fetcher:
             headers=data.get("headers", {}),
             fetched_at=datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc),
             from_cache=True,
+            rendered=data.get("rendered", False),
         )
 
-    def _write_cache(self, url: str, page: Page) -> None:
+    def _write_cache(self, key: str, page: Page) -> None:
         if not self.config.use_cache or not page.ok:
             return
-        path = self._cache_path(url)
+        path = self._cache_path(key)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(
@@ -236,6 +299,7 @@ class Fetcher:
                         "html": page.html,
                         "text": page.text,
                         "headers": page.headers,
+                        "rendered": page.rendered,
                     }
                 ),
                 encoding="utf-8",
@@ -245,13 +309,19 @@ class Fetcher:
 
     # -- fetching --
 
-    def get(self, url: str, role: str = "other") -> Page:
-        """Fetch one HTML page. Never raises; failures come back on ``Page.error``."""
+    def get(self, url: str, role: str = "other", force_render: bool = False) -> Page:
+        """Fetch one HTML page. Never raises; failures come back on ``Page.error``.
+
+        When ``force_render`` is set — or when the served HTML comes back too
+        thin to be the whole page — the page is re-rendered in a headless
+        browser, if one is available.
+        """
         url = clean_url(url)
         if not url:
             return Page(url=url, role=role, error="unsupported URL scheme")
 
-        cached = self._read_cache(url)
+        cache_key = url + "|js" if force_render else url
+        cached = self._read_cache(cache_key)
         if cached is not None:
             cached.role = role
             return cached
@@ -262,10 +332,12 @@ class Fetcher:
             return Page(url=url, role=role, error="disallowed by robots.txt")
 
         host = urlparse(url).netloc
+        delay = self.delay_for(url)
         last_error = "unknown error"
+
         for attempt in range(self.config.retries + 1):
             try:
-                self._wait(host)
+                self._wait(host, delay)
                 self.fetch_count += 1
                 resp = self.session.get(
                     url,
@@ -274,6 +346,18 @@ class Fetcher:
                     allow_redirects=True,
                     stream=True,
                 )
+
+                # The server is explicitly asking us to slow down. Honour the
+                # interval it named rather than guessing with backoff.
+                if resp.status_code in (429, 503) and attempt < self.config.retries:
+                    pause = self._retry_after(resp.headers.get("Retry-After"), attempt)
+                    resp.close()
+                    self.notes.append(
+                        f"{host} returned HTTP {resp.status_code}; waiting {pause:g}s as asked"
+                    )
+                    time.sleep(pause)
+                    continue
+
                 ctype = resp.headers.get("Content-Type", "")
                 if "html" not in ctype and "xml" not in ctype and ctype:
                     resp.close()
@@ -309,7 +393,11 @@ class Fetcher:
 
                 page.text = html_to_text(html)
                 page.title = page_title(html)
-                self._write_cache(url, page)
+
+                if force_render or self._looks_thin(page):
+                    self._render_into(page, force=force_render)
+
+                self._write_cache(cache_key, page)
                 return page
 
             except requests.RequestException as exc:
@@ -318,6 +406,53 @@ class Fetcher:
                     time.sleep(2**attempt)
 
         return Page(url=url, role=role, error=last_error)
+
+    def _retry_after(self, header: str | None, attempt: int) -> float:
+        """Seconds to wait, from a ``Retry-After`` header if the server sent one."""
+        fallback = float(2**attempt)
+        if not header:
+            return fallback
+        header = header.strip()
+        try:
+            return max(0.0, min(float(header), self.config.max_retry_after))
+        except ValueError:
+            pass
+        try:
+            when = parsedate_to_datetime(header)
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+            seconds = (when - datetime.now(timezone.utc)).total_seconds()
+            return max(0.0, min(seconds, self.config.max_retry_after))
+        except (TypeError, ValueError):
+            return fallback
+
+    def _looks_thin(self, page: Page) -> bool:
+        """Does this page look like a shell whose content arrives via JavaScript?"""
+        if self.renderer is None or not self.renderer.possible:
+            return False
+        words = len(page.text.split())
+        # Count parsed anchors, not occurrences of "<a " in the source: a shell
+        # page often carries its whole nav as a string inside a <script>, which
+        # would otherwise read as link-rich.
+        links = len(make_soup(page.html).find_all("a", href=True))
+        return words < 250 or links < 15
+
+    def _render_into(self, page: Page, force: bool = False) -> None:
+        """Replace a page's HTML with a browser-rendered version, if we can."""
+        if self.renderer is None or not self.renderer.possible:
+            return
+        rendered = self.renderer.render(page.final_url or page.url)
+        if not rendered:
+            if self.renderer.reason:
+                self.notes.append(f"headless rendering unavailable: {self.renderer.reason}")
+            return
+        # Only accept the render if it actually recovered something.
+        if force or len(rendered) > len(page.html) * 1.1:
+            page.html = rendered
+            page.text = html_to_text(rendered)
+            page.title = page_title(rendered) or page.title
+            page.rendered = True
+            self.render_count += 1
 
     def get_text(self, url: str) -> str:
         """Fetch a non-HTML resource (sitemaps) as text; empty string on failure."""
@@ -351,3 +486,52 @@ class Fetcher:
 
     def close(self) -> None:
         self.session.close()
+        if self.renderer is not None:
+            self.renderer.close()
+
+
+def prune_cache(cache_dir: Path, ttl: int, max_bytes: int) -> int:
+    """Delete expired cache entries, then trim to ``max_bytes``, oldest first.
+
+    Entries were previously only ignored once stale, never removed, so the
+    directory grew without limit. Returns the number of files deleted.
+    """
+    try:
+        if not cache_dir.exists():
+            return 0
+        entries: list[tuple[float, int, Path]] = []
+        for path in cache_dir.rglob("*.json"):
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            entries.append((stat.st_mtime, stat.st_size, path))
+    except OSError:
+        return 0
+
+    removed = 0
+    cutoff = time.time() - ttl
+    surviving: list[tuple[float, int, Path]] = []
+    for mtime, size, path in entries:
+        if mtime < cutoff:
+            try:
+                path.unlink()
+                removed += 1
+            except OSError:
+                pass
+        else:
+            surviving.append((mtime, size, path))
+
+    total = sum(size for _m, size, _p in surviving)
+    if total > max_bytes:
+        for mtime, size, path in sorted(surviving):  # oldest first
+            if total <= max_bytes:
+                break
+            try:
+                path.unlink()
+                total -= size
+                removed += 1
+            except OSError:
+                pass
+
+    return removed

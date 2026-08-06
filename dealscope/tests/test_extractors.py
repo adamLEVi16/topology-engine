@@ -82,6 +82,52 @@ def test_commerce_ignores_plan_words_far_from_prices():
     assert "Company" not in model.plan_names
 
 
+def test_commerce_ignores_feature_names_beside_prices_in_prose():
+    """Basecamp's "Timesheet" sat next to a price inside an FAQ paragraph."""
+    from .conftest import make_page
+
+    page = make_page(
+        "https://a.test/pricing", "pricing",
+        "<body>"
+        "<h3>Pro</h3><p>$299/month</p>"
+        "<h4>Timesheet</h4>"
+        "<p>The Timesheet upgrade is $50/month flat no matter how many people "
+        "you have on your account, and it is included on the Pro package.</p>"
+        "</body>",
+    )
+    model, _ = commerce.extract([page])
+    assert "Pro" in model.plan_names
+    assert "Timesheet" not in model.plan_names
+
+
+def test_commerce_does_not_invent_tiers_from_shop_promo_lines(shop_pages):
+    """"Spend $50 / free Shipping" is a banner, not two pricing tiers."""
+    model, _ = commerce.extract(shop_pages, platform_hints=["Shopify"])
+    assert model.plan_names == []
+
+
+def test_industry_tags_lead_with_the_detected_revenue_model():
+    """A shoe shop whose copy is full of brand talk must not read as an agency."""
+    from .conftest import make_page
+
+    page = make_page(
+        "https://boots.test/", "home",
+        "<html><head><title>Bootco</title></head><body>"
+        "<h1>Boots</h1>"
+        "<p>Our brand strategy and marketing shape every campaign. "
+        "Marketing, advertising, brand strategy, campaign after campaign.</p>"
+        "</body></html>",
+    )
+
+    plain, _ = identity.extract([page], "boots.test")
+    seeded, _ = identity.extract([page], "boots.test", business_model="ecommerce")
+
+    assert plain["industry_tags"][0] == "Marketing / advertising"
+    assert seeded["industry_tags"][0] == "E-commerce / retail"
+    # The keyword reading is kept, just demoted below the harder evidence.
+    assert "Marketing / advertising" in seeded["industry_tags"]
+
+
 # --- people ---
 
 
@@ -110,6 +156,42 @@ def test_people_finds_founders_described_in_prose():
     found = {p["name"]: p["title"] for p in data["named_people"]}
     assert found.get("Priya Raman") == "Founder"
     assert "Tomas Eriksen" in found
+
+
+def test_people_ignores_a_lone_image_that_is_not_a_customer_logo():
+    """A stray thumbnail alt-tag became a Basecamp "customer" before this."""
+    from .conftest import make_page
+
+    page = make_page(
+        "https://a.test/", "home",
+        "<body><h1>Product tour</h1>"
+        "<section><img src='/v.png' alt='Walkthrough'>"
+        "<p>Watch how it works.</p></section></body>",
+    )
+    data, _ = people.extract([page], 12, 15)
+    assert data["named_customers"] == []
+
+
+def test_people_accepts_logos_in_a_wall_or_under_customer_wording():
+    from .conftest import make_page
+
+    wall = make_page(
+        "https://a.test/", "home",
+        "<body><div><img src='1.svg' alt='Riverside Physio'>"
+        "<img src='2.svg' alt='Northgate Clinic'>"
+        "<img src='3.svg' alt='Harbour Sports'></div></body>",
+    )
+    labelled = make_page(
+        "https://a.test/", "home",
+        "<body><section><h2>Trusted by</h2>"
+        "<img src='1.svg' alt='Solo Client Ltd'></section></body>",
+    )
+
+    from_wall, _ = people.extract([wall], 12, 15)
+    from_heading, _ = people.extract([labelled], 12, 15)
+
+    assert "Riverside Physio" in from_wall["named_customers"]
+    assert "Solo Client Ltd" in from_heading["named_customers"]
 
 
 def test_people_rejects_legal_boilerplate_shaped_like_names():

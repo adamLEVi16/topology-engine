@@ -108,7 +108,21 @@ def analyze(
         home_platforms = tuple(t.name for t in tech.extract([home])[0])
 
         candidates = plan_candidates(fetcher, home, host, config, home_platforms)
-        budget = [max(1, config.max_pages - 1)]
+
+        # If robots.txt asked us to wait a long time between requests, read
+        # fewer pages rather than spend ten minutes on one site. Coverage drops,
+        # and the brief says why.
+        page_delay = fetcher.delay_for(home.final_url or home.url)
+        allowance = max(1, config.max_pages - 1)
+        if page_delay > config.delay:
+            affordable = max(3, int(config.polite_time_budget / page_delay))
+            if affordable < allowance:
+                allowance = affordable
+                fetcher.notes.append(
+                    f"page budget reduced to {allowance} to respect the site's "
+                    f"requested {page_delay:g}s crawl delay"
+                )
+        budget = [allowance]
         cursor = {role: 0 for role in candidates}
         accepted = {role: 0 for role in candidates}
 
@@ -156,6 +170,34 @@ def analyze(
                     candidates[role][:position] + options + candidates[role][position:]
                 )
 
+        # Still short on standard pages? The homepage very likely builds its
+        # navigation in the browser. Render it once and re-plan from what that
+        # reveals — this is what recovers footers that only exist after JS runs.
+        still_empty = {role for role in candidates if accepted[role] == 0}
+        renderer = getattr(fetcher, "renderer", None)
+        if len(still_empty) >= 3 and renderer is not None and renderer.possible and budget[0] > 0:
+            say("Re-reading the homepage with a browser …")
+            rendered_home = fetcher.get(
+                home.final_url or home.url, role=ROLE_HOME, force_render=True
+            )
+            budget[0] -= 1
+            if rendered_home.ok and rendered_home.rendered:
+                pages[0] = home = rendered_home
+                client_rendered = True
+                recovered = len(links_from(rendered_home, host)) - len(home_links)
+                fetcher.notes.append(
+                    f"rendered the homepage in a browser and found {max(0, recovered)} "
+                    "additional links"
+                )
+                tried = {c.url for options in candidates.values() for c in options}
+                for role, options in extra_candidates(
+                    [rendered_home], host, still_empty, tried
+                ).items():
+                    position = cursor[role]
+                    candidates[role] = (
+                        candidates[role][:position] + options + candidates[role][position:]
+                    )
+
         # Rescue passes for roles that came back empty.
         for _round in range(3):
             for role in candidates:
@@ -169,12 +211,15 @@ def analyze(
 
         say("Extracting evidence …")
 
-        # Tech runs first: platform fingerprints feed the revenue-model call.
+        # Order matters: platform fingerprints feed the revenue-model call, and
+        # the revenue model in turn seeds the sector description.
         tech_findings, dependencies, integrations, tech_evidence = tech.extract(pages)
 
-        identity_data, identity_evidence = identity.extract(pages, host)
         model, model_evidence = commerce.extract(
             pages, platform_hints=[t.name for t in tech_findings]
+        )
+        identity_data, identity_evidence = identity.extract(
+            pages, host, business_model=model.primary
         )
         people_data, people_evidence = people.extract(
             pages,
