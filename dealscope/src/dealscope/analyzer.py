@@ -1,0 +1,275 @@
+"""The pipeline: domain in, brief out."""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timezone
+from typing import Callable
+
+from .config import Config, __version__
+from .discovery import MULTI_PAGE_ROLES, extra_candidates, plan_candidates
+from .extract import commerce, contact, content, hiring, identity, people, tech
+from .discovery import links_from
+from .fetch import Fetcher, normalize_domain
+from .models import (
+    ROLE_HOME,
+    BusinessModel,
+    CompanyBrief,
+    Momentum,
+    Operations,
+    Page,
+    RiskFlag,
+    Scale,
+    TrustProfile,
+)
+from .narrate import narrate
+from .scoring import (
+    build_diligence_questions,
+    build_risk_flags,
+    build_scores,
+    build_signals,
+    build_unknowns,
+)
+
+log = logging.getLogger("dealscope")
+
+ProgressFn = Callable[[str], None]
+
+
+def _noop(_message: str) -> None:
+    pass
+
+
+def analyze(
+    domain: str,
+    config: Config | None = None,
+    progress: ProgressFn | None = None,
+) -> CompanyBrief:
+    """Read a company's public website and build a buyer-oriented brief.
+
+    Never raises for network or parsing problems: an unreachable site comes
+    back as a brief whose coverage score is zero and whose risk flags say so.
+    """
+    config = config or Config()
+    say = progress or _noop
+    host = normalize_domain(domain)
+    today = datetime.now(timezone.utc).date()
+
+    brief = CompanyBrief(
+        domain=host,
+        generated_at=datetime.now(timezone.utc),
+        version=__version__,
+    )
+
+    fetcher = Fetcher(config)
+    try:
+        say(f"Fetching {host} …")
+        home = fetcher.resolve_home(host)
+        pages: list[Page] = [home]
+
+        if not home.ok:
+            brief.canonical_url = f"https://{host}/"
+            brief.name = host
+            brief.pages = [home.summary()]
+            brief.fetch_notes = fetcher.notes + [f"homepage unreachable: {home.error}"]
+            brief.risk_flags = [
+                RiskFlag(
+                    "unreachable",
+                    "The site could not be read",
+                    "high",
+                    f"Requesting https://{host}/ returned: {home.error}. Nothing in this "
+                    "brief could be verified. Check the domain, or whether the site "
+                    "blocks automated readers.",
+                )
+            ]
+            brief.scores = build_scores(brief, today)
+            brief.unknowns = build_unknowns(brief)
+            brief.diligence_questions = build_diligence_questions(brief)
+            brief.headline = f"{host} — site unreachable"
+            brief.narrative = (
+                f"No brief could be produced for {host}: the homepage did not return "
+                "readable HTML. Everything below is a list of what remains unknown."
+            )
+            return brief
+
+        # A page full of text but nearly free of links means the navigation is
+        # assembled by JavaScript. This tool reads server-rendered HTML only, so
+        # that has to be said out loud rather than reported as "nothing found".
+        home_links = links_from(home, host)
+        client_rendered = len(home_links) < 12 and len(home.text.split()) > 400
+        if client_rendered:
+            fetcher.notes.append(
+                f"the homepage exposes only {len(home_links)} server-rendered links, so parts "
+                "of this site are likely built client-side and could not be read"
+            )
+
+        # Fingerprint the homepage before planning: knowing the site runs on
+        # Shopify tells us where its policy pages live.
+        home_platforms = tuple(t.name for t in tech.extract([home])[0])
+
+        candidates = plan_candidates(fetcher, home, host, config, home_platforms)
+        budget = [max(1, config.max_pages - 1)]
+        cursor = {role: 0 for role in candidates}
+        accepted = {role: 0 for role in candidates}
+
+        def attempt(role: str) -> bool:
+            """Fetch the next untried candidate for ``role``."""
+            options = candidates[role]
+            index = cursor[role]
+            if index >= len(options) or budget[0] <= 0:
+                return False
+
+            candidate = options[index]
+            cursor[role] = index + 1
+            say(f"{role}: {candidate.url}")
+            page = fetcher.get(candidate.url, role=role)
+            budget[0] -= 1
+
+            if page.ok:
+                pages.append(page)
+                accepted[role] += 1
+                return True
+            if candidate.linked:
+                # The site itself published this link and it did not resolve.
+                # That is a finding about the site, so it stays in the brief.
+                pages.append(page)
+            else:
+                fetcher.notes.append(f"guessed {candidate.url} → {page.error}")
+            return False
+
+        # Breadth first: one shot at every role before spending anything on
+        # second guesses. Depth-first here would let a role whose guesses all
+        # 404 consume the budget and starve pages that actually exist.
+        for role in candidates:
+            attempt(role)
+
+        # Roles still empty may be linked from a page we have now read rather
+        # than from the homepage. Fold those in ahead of the remaining guesses.
+        empty = {role for role in candidates if accepted[role] == 0}
+        if empty:
+            tried = {c.url for options in candidates.values() for c in options}
+            for role, options in extra_candidates(
+                [p for p in pages if p.ok], host, empty, tried
+            ).items():
+                position = cursor[role]
+                candidates[role] = (
+                    candidates[role][:position] + options + candidates[role][position:]
+                )
+
+        # Rescue passes for roles that came back empty.
+        for _round in range(3):
+            for role in candidates:
+                if accepted[role] == 0:
+                    attempt(role)
+
+        # Only now spend what is left on second pages where they add something.
+        for role in candidates:
+            if role in MULTI_PAGE_ROLES and accepted[role] >= 1:
+                attempt(role)
+
+        say("Extracting evidence …")
+
+        # Tech runs first: platform fingerprints feed the revenue-model call.
+        tech_findings, dependencies, integrations, tech_evidence = tech.extract(pages)
+
+        identity_data, identity_evidence = identity.extract(pages, host)
+        model, model_evidence = commerce.extract(
+            pages, platform_hints=[t.name for t in tech_findings]
+        )
+        people_data, people_evidence = people.extract(
+            pages,
+            config.max_people,
+            config.max_customers,
+            company_name=identity_data["name"],
+            domain=host,
+        )
+        hiring_data, hiring_evidence = hiring.extract(pages)
+        contact_data, contact_evidence = contact.extract(pages, host)
+        content_data, content_evidence = content.extract(pages, config.blog_window_days, today)
+
+        # --- assemble ---
+        brief.canonical_url = identity_data["canonical_url"]
+        brief.name = identity_data["name"]
+        brief.tagline = identity_data["tagline"]
+        brief.description = identity_data["description"]
+        brief.industry_tags = identity_data["industry_tags"]
+
+        brief.business_model = model
+
+        brief.scale = Scale(
+            headcount_estimate=people_data["headcount_estimate"],
+            headcount_basis=people_data["headcount_basis"],
+            named_people=people_data["named_people"],
+            leadership=people_data["leadership"],
+            locations=contact_data["locations"],
+            named_customers=people_data["named_customers"],
+            customer_count_claim=people_data["customer_count_claim"],
+            founded_year=identity_data["founded_year"],
+            evidence=identity_evidence + people_evidence,
+        )
+
+        brief.momentum = Momentum(
+            open_roles=hiring_data["open_roles"],
+            hiring_departments=hiring_data["hiring_departments"],
+            role_titles=hiring_data["role_titles"],
+            last_content_date=content_data["last_content_date"],
+            posts_per_month=content_data["posts_per_month"],
+            content_window_days=content_data["content_window_days"],
+            funding_mentions=content_data["funding_mentions"],
+            ownership_notes=content_data["ownership_notes"],
+            copyright_year=content_data["copyright_year"],
+            evidence=hiring_evidence + content_evidence,
+        )
+
+        brief.operations = Operations(
+            tech=tech_findings,
+            platform_dependencies=dependencies,
+            integrations=integrations,
+            evidence=tech_evidence,
+        )
+
+        brief.trust = TrustProfile(
+            legal_pages=contact_data["legal_pages"],
+            compliance_claims=contact_data["compliance_claims"],
+            emails=contact_data["emails"],
+            phones=contact_data["phones"],
+            addresses=contact_data["addresses"],
+            socials=contact_data["socials"],
+            evidence=contact_evidence,
+        )
+
+        brief.pages = [page.summary() for page in pages]
+        brief.fetch_notes = fetcher.notes
+
+        say("Scoring …")
+        brief.signals = build_signals(brief, today)
+        brief.scores = build_scores(brief, today)
+        brief.risk_flags = build_risk_flags(
+            brief,
+            today,
+            client_rendered=client_rendered,
+            robots_blocked=len(fetcher.robots_blocked),
+        )
+        brief.unknowns = build_unknowns(brief)
+        brief.diligence_questions = build_diligence_questions(brief)
+
+        say("Writing the summary …")
+        narrate(brief, config, today)
+
+        return brief
+    finally:
+        fetcher.close()
+
+
+def analyze_many(
+    domains: list[str],
+    config: Config | None = None,
+    progress: ProgressFn | None = None,
+) -> list[CompanyBrief]:
+    briefs: list[CompanyBrief] = []
+    for domain in domains:
+        try:
+            briefs.append(analyze(domain, config=config, progress=progress))
+        except ValueError as exc:
+            log.warning("skipping %s: %s", domain, exc)
+    return briefs

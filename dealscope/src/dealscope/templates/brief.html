@@ -1,0 +1,222 @@
+{% extends "_layout.html" %}
+{% block title %}{{ brief.display_name }} — buyer brief{% endblock %}
+{% block content %}
+
+{% if show_form %}
+  {% include "_form.html" %}
+{% endif %}
+
+<h1>{{ brief.headline }}</h1>
+<p class="meta">
+  <a href="{{ brief.canonical_url }}" rel="noopener nofollow" target="_blank">{{ brief.domain }}</a>
+  · generated {{ generated }}
+  · dealscope v{{ brief.version }}
+  {%- if brief.narrative_source != 'deterministic' %} · prose by {{ brief.narrative_source }}{% endif %}
+</p>
+
+<div class="disclaimer">{{ disclaimer }}</div>
+
+<h2>Summary</h2>
+<div class="card summary">
+  {% for para in narrative_paragraphs %}<p>{{ para }}</p>{% endfor %}
+</div>
+
+{% if brief.industry_tags %}
+<p style="margin-top:1rem">
+  {% for tag in brief.industry_tags %}<span class="pill">{{ tag }}</span>{% endfor %}
+</p>
+{% endif %}
+
+{% if brief.scores %}
+<h2>Scorecard</h2>
+<div class="scores">
+  {% for label, score in brief.scores.as_pairs() %}
+  <div class="card">
+    <div class="score-label">{{ label }}</div>
+    <div class="score-value">{{ score.value | round | int }}<span>/100 · {{ score.band }}</span></div>
+    <div class="bar"><i style="width: {{ score.value }}%"></i></div>
+    <div class="score-why">{{ score.rationale | join('; ') or '—' }}</div>
+  </div>
+  {% endfor %}
+</div>
+<p class="score-why" style="margin-top:.8rem">
+  Scores describe what the public website shows, not the quality of the business.
+  Evidence coverage is the confidence gauge for this brief.
+</p>
+{% endif %}
+
+<h2>Business model</h2>
+<div class="card table-wrap">
+  <table>
+    <tr><td class="key">Revenue model</td><td>{{ model_label }}</td></tr>
+    {% if brief.business_model.confidence %}
+    <tr><td class="key">Confidence</td><td>{{ (brief.business_model.confidence * 100) | round | int }}% from public signals</td></tr>
+    {% endif %}
+    <tr><td class="key">Sales motion</td><td>{{ brief.business_model.sales_motion }}</td></tr>
+    <tr><td class="key">Published prices</td><td>{{ brief.business_model.price_points | join(', ') or 'none found' }}</td></tr>
+    {% if brief.business_model.plan_names %}
+    <tr><td class="key">Plans / tiers</td><td>{{ brief.business_model.plan_names | join(', ') }}</td></tr>
+    {% endif %}
+    {% if brief.business_model.billing_periods %}
+    <tr><td class="key">Billing periods</td><td>{{ brief.business_model.billing_periods | join(', ') }}</td></tr>
+    {% endif %}
+    {% if brief.business_model.has_free_tier is not none %}
+    <tr><td class="key">Free tier advertised</td><td>{{ 'yes' if brief.business_model.has_free_tier else 'not found' }}</td></tr>
+    {% endif %}
+  </table>
+</div>
+
+<h2>Scale and team</h2>
+<div class="card table-wrap">
+  <table>
+    <tr><td class="key">Headcount signal</td><td>{{ brief.scale.headcount_estimate or 'not established' }}
+      {%- if brief.scale.headcount_basis %} <span class="score-why">({{ brief.scale.headcount_basis }})</span>{% endif %}</td></tr>
+    <tr><td class="key">Founded</td><td>{{ brief.scale.founded_year or 'not stated' }}</td></tr>
+    <tr><td class="key">Locations</td><td>{{ brief.scale.locations | join(', ') or 'not stated' }}</td></tr>
+    <tr><td class="key">Named customers</td><td>{{ brief.scale.named_customers | join(', ') or 'none found' }}</td></tr>
+    {% if brief.scale.customer_count_claim %}
+    <tr><td class="key">Customer claim</td><td>“{{ brief.scale.customer_count_claim }}” <span class="score-why">(marketing claim, unverified)</span></td></tr>
+    {% endif %}
+    {% if brief.scale.named_people %}
+    <tr><td class="key">People named</td><td>
+      {% for person in brief.scale.named_people %}
+        <strong>{{ person.name }}</strong>{% if person.title %} — {{ person.title }}{% endif %}<br>
+      {% endfor %}
+    </td></tr>
+    {% endif %}
+  </table>
+</div>
+
+<h2>Momentum</h2>
+<div class="card table-wrap">
+  <table>
+    <tr><td class="key">Open roles</td><td>
+      {{ brief.momentum.open_roles if brief.momentum.open_roles is not none else 'not established' }}
+      {%- if brief.momentum.hiring_departments %} — {{ brief.momentum.hiring_departments | join(', ') }}{% endif %}</td></tr>
+    <tr><td class="key">Most recent dated content</td><td>{{ brief.momentum.last_content_date or 'none found' }}</td></tr>
+    {% if brief.momentum.posts_per_month is not none %}
+    <tr><td class="key">Publishing rate</td><td>~{{ brief.momentum.posts_per_month }}/month</td></tr>
+    {% endif %}
+    {% if brief.momentum.copyright_year %}
+    <tr><td class="key">Footer copyright</td><td>{{ brief.momentum.copyright_year }}</td></tr>
+    {% endif %}
+    {% if brief.momentum.funding_mentions %}
+    <tr><td class="key">Funding mentions</td><td>{{ brief.momentum.funding_mentions | join('; ') }}</td></tr>
+    {% endif %}
+    {% if brief.momentum.ownership_notes %}
+    <tr><td class="key">Ownership notes</td><td>{{ brief.momentum.ownership_notes | join('; ') }}</td></tr>
+    {% endif %}
+  </table>
+</div>
+
+<h2>Operations and technology</h2>
+<div class="card table-wrap">
+  {% if tech_by_category %}
+  <table>
+    {% for category, names in tech_by_category %}
+    <tr><td class="key">{{ category }}</td><td>{{ names | join(', ') }}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="score-why">No technology fingerprints were detected.</p>
+  {% endif %}
+  {% if brief.operations.platform_dependencies %}
+  <p style="margin-top:1rem"><strong>Platform dependency:</strong>
+    {{ brief.operations.platform_dependencies | join(', ') }} — confirm these accounts
+    transfer with the sale.</p>
+  {% endif %}
+</div>
+
+<h2>Contact and trust surface</h2>
+<div class="card table-wrap">
+  <table>
+    <tr><td class="key">Emails</td><td>{{ brief.trust.emails | join(', ') or 'none found' }}</td></tr>
+    <tr><td class="key">Phones</td><td>{{ brief.trust.phones | join(', ') or 'none found' }}</td></tr>
+    <tr><td class="key">Addresses</td><td>{{ brief.trust.addresses | join('; ') or 'none found' }}</td></tr>
+    <tr><td class="key">Socials</td><td>
+      {% for name, url in brief.trust.socials.items() %}
+        <a href="{{ url }}" rel="noopener nofollow" target="_blank">{{ name }}</a>{% if not loop.last %}, {% endif %}
+      {% else %}none found{% endfor %}
+    </td></tr>
+    <tr><td class="key">Legal pages</td><td>
+      {% for name, url in brief.trust.legal_pages.items() %}
+        <a href="{{ url }}" rel="noopener nofollow" target="_blank">{{ name }}</a>{% if not loop.last %}, {% endif %}
+      {% else %}none found{% endfor %}
+    </td></tr>
+    <tr><td class="key">Compliance claims</td><td>{{ brief.trust.compliance_claims | join(', ') or 'none found' }}</td></tr>
+  </table>
+</div>
+
+<h2>Risk flags</h2>
+{% for flag in brief.risk_flags %}
+<div class="flag {{ flag.severity }}">
+  <h3>{{ flag.title }}<span class="sev">{{ flag.severity }}</span></h3>
+  <p>{{ flag.detail }}</p>
+</div>
+{% else %}
+<div class="card"><p class="score-why">No risk flags were raised by the checks this tool runs.</p></div>
+{% endfor %}
+
+<div class="two-col" style="margin-top:2.75rem">
+  <div>
+    <h2 style="margin-top:0">What this cannot tell you</h2>
+    <div class="card"><ul>
+      {% for item in brief.unknowns %}<li>{{ item }}</li>{% endfor %}
+    </ul></div>
+  </div>
+  <div>
+    <h2 style="margin-top:0">Questions for the seller</h2>
+    <div class="card"><ol>
+      {% for question in brief.diligence_questions %}<li>{{ question }}</li>{% endfor %}
+    </ol></div>
+  </div>
+</div>
+
+<details>
+  <summary>Evidence ({{ evidence | length }} observations)</summary>
+  <div class="card table-wrap">
+    <table>
+      <thead><tr><th>Field</th><th>Observed</th><th>Method</th><th>Conf.</th><th>Source</th></tr></thead>
+      <tbody>
+      {% for ev in evidence %}
+        <tr>
+          <td><code>{{ ev.field }}</code></td>
+          <td>{{ ev.value[:110] }}</td>
+          <td>{{ ev.method }}</td>
+          <td>{{ '%.2f' | format(ev.confidence) }}</td>
+          <td><a href="{{ ev.source_url }}" rel="noopener nofollow" target="_blank">link</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<details>
+  <summary>Pages read ({{ pages_ok }} of {{ brief.pages | length }} attempted)</summary>
+  <div class="card table-wrap">
+    <table>
+      <thead><tr><th>Role</th><th>Status</th><th>Words</th><th>URL</th></tr></thead>
+      <tbody>
+      {% for page in brief.pages %}
+        <tr>
+          <td>{{ page.role }}</td>
+          <td>{{ page.error or page.status }}</td>
+          <td>{{ page.words }}</td>
+          <td><a href="{{ page.url }}" rel="noopener nofollow" target="_blank">{{ page.url }}</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if brief.fetch_notes %}
+    <h3>Fetch notes</h3>
+    <ul>{% for note in brief.fetch_notes %}<li class="score-why">{{ note }}</li>{% endfor %}</ul>
+    {% endif %}
+  </div>
+</details>
+
+<footer>
+  Built by dealscope from publicly available pages on {{ brief.domain }}, read the way a
+  browser reads them, honouring robots.txt. Not affiliated with {{ brief.display_name }}.
+</footer>
+{% endblock %}

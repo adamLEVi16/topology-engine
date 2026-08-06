@@ -1,0 +1,9 @@
+<form class="lookup" method="get" action="/">
+  <input type="text" name="domain" value="{{ domain or '' }}"
+         placeholder="acme.com" aria-label="Company domain" autofocus required>
+  <button type="submit">Build brief</button>
+  <label class="opts">
+    <input type="checkbox" name="fresh" value="1" {% if fresh %}checked{% endif %}>
+    ignore cache
+  </label>
+</form>
