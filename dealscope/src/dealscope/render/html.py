@@ -53,6 +53,11 @@ def to_html(brief: CompanyBrief, show_form: bool = False, **extra) -> str:
     return template.render(**brief_context(brief, show_form=show_form, **extra))
 
 
+def render_working(job) -> str:
+    """The self-refreshing progress page shown while an analysis runs."""
+    return _env.get_template("working.html").render(job=job, version=__version__)
+
+
 def render_index(error: str = "", domain: str = "", fresh: bool = False) -> str:
     template = _env.get_template("index.html")
     return template.render(
