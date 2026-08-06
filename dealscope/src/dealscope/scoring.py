@@ -157,14 +157,54 @@ def score_maturity(brief: CompanyBrief, today: date) -> Score:
     if len(brief.operations.tech) >= 6:
         points += 5; why.append("a real stack of production tooling in use")
 
+    # For a local business, coverage and credentials are what maturity looks
+    # like — it has no plans, no logo wall, and no reason to have them.
+    if scale.service_areas:
+        points += 8; why.append(f"publishes a service area ({scale.service_areas[0]})")
+    if trust.opening_hours:
+        points += 4; why.append("publishes opening hours")
+
     value = min(100.0, points)
     return Score(round(value, 1), _band(value), why)
+
+
+# Business types that have no reason to publish or to hire in public. Judging
+# them on blog cadence measures the yardstick, not the company.
+QUIET_BY_NATURE = ("local_services",)
 
 
 def score_momentum(brief: CompanyBrief, today: date) -> Score:
     points = 0.0
     why: list[str] = []
     momentum = brief.momentum
+
+    quiet = brief.business_model.primary in QUIET_BY_NATURE
+    has_public_activity = bool(
+        momentum.last_content_date or momentum.open_roles or momentum.funding_mentions
+    )
+    if quiet and not has_public_activity:
+        # Report the one thing that is observable, and be explicit that the
+        # rest is unmeasured rather than absent.
+        current = (
+            momentum.copyright_year is not None and today.year - momentum.copyright_year <= 1
+        )
+        return Score(
+            value=60.0 if current else 30.0,
+            band="not assessable",
+            rationale=[
+                "a local trade business has no reason to blog or post jobs, so "
+                "publishing cadence says nothing about it",
+                (
+                    f"the footer copyright reads {momentum.copyright_year}, so the site is "
+                    "being maintained"
+                    if current
+                    else "the only freshness signal available is the footer copyright"
+                    + (f", which reads {momentum.copyright_year}" if momentum.copyright_year else ", which is absent")
+                ),
+                "ask for job volumes, crew utilisation, and repeat-customer rate instead",
+            ],
+            assessable=False,
+        )
 
     if momentum.open_roles:
         if momentum.open_roles >= 10:
@@ -365,7 +405,9 @@ def build_risk_flags(
             "business depends on them, transferability is the central question.",
         ))
 
-    if not model.price_points:
+    # A trade business quotes every job, so absent prices are the norm rather
+    # than a finding. Raising it as a flag would be noise dressed as insight.
+    if not model.price_points and model.primary != "local_services":
         flags.append(RiskFlag(
             "no_public_pricing", "Pricing is not published", "medium",
             "Without public prices, revenue cannot be sanity-checked from the "
@@ -390,11 +432,20 @@ def build_risk_flags(
         ))
 
     if trust.compliance_claims:
-        flags.append(RiskFlag(
-            "unverified_compliance", "Compliance claims are unverified", "low",
-            "The site claims " + ", ".join(trust.compliance_claims) + ". These were "
-            "read off marketing copy — ask for the current audit reports.",
-        ))
+        claimed = ", ".join(trust.compliance_claims)
+        if model.primary == "local_services":
+            flags.append(RiskFlag(
+                "unverified_credentials", "Licences and insurance are unverified", "low",
+                f"The site claims {claimed}. That is marketing copy — ask for the "
+                "current licence numbers and certificates of insurance, and check "
+                "they are held by the entity being sold and transfer on completion.",
+            ))
+        else:
+            flags.append(RiskFlag(
+                "unverified_compliance", "Compliance claims are unverified", "low",
+                f"The site claims {claimed}. These were read off marketing copy — "
+                "ask for the current audit reports.",
+            ))
 
     errors = [p for p in brief.pages if p.get("error")]
     if len(errors) >= 3:
@@ -454,6 +505,16 @@ MODEL_QUESTIONS: dict[str, list[str]] = {
         "What inventory is on hand, and how is it valued?",
         "What share of traffic and revenue is paid, and what is blended ROAS?",
         "What is the returns and chargeback rate?",
+    ],
+    "local_services": [
+        "What were revenue and gross margin per job over the last three years, by service line?",
+        "What share of work is recurring contracts versus one-off callouts?",
+        "How seasonal is the work, and what does the slowest quarter look like?",
+        "How many crews and licensed technicians are there, and what is staff turnover?",
+        "Which licences and insurance policies are held, in whose name, and do they transfer?",
+        "Are vehicles, plant, and equipment owned, financed, or leased — and what is their condition?",
+        "How much selling and estimating does the owner personally do?",
+        "Where does new work come from — referrals, Google, trucks, or paid ads?",
     ],
     "services": [
         "What is revenue by client, and what share is the largest client?",

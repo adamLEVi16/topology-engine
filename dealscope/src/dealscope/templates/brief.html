@@ -33,8 +33,13 @@
   {% for label, score in brief.scores.as_pairs() %}
   <div class="card">
     <div class="score-label">{{ label }}</div>
+    {% if score.assessable %}
     <div class="score-value">{{ score.value | round | int }}<span>/100 · {{ score.band }}</span></div>
     <div class="bar"><i style="width: {{ score.value }}%"></i></div>
+    {% else %}
+    <div class="score-value">—<span> not assessable</span></div>
+    <div class="bar"></div>
+    {% endif %}
     <div class="score-why">{{ score.rationale | join('; ') or '—' }}</div>
   </div>
   {% endfor %}
@@ -73,6 +78,9 @@
       {%- if brief.scale.headcount_basis %} <span class="score-why">({{ brief.scale.headcount_basis }})</span>{% endif %}</td></tr>
     <tr><td class="key">Founded</td><td>{{ brief.scale.founded_year or 'not stated' }}</td></tr>
     <tr><td class="key">Locations</td><td>{{ brief.scale.locations | join(', ') or 'not stated' }}</td></tr>
+    {% if brief.scale.service_areas %}
+    <tr><td class="key">Service area</td><td>{{ brief.scale.service_areas | join('; ') }}</td></tr>
+    {% endif %}
     <tr><td class="key">Named customers</td><td>{{ brief.scale.named_customers | join(', ') or 'none found' }}</td></tr>
     {% if brief.scale.customer_count_claim %}
     <tr><td class="key">Customer claim</td><td>“{{ brief.scale.customer_count_claim }}” <span class="score-why">(marketing claim, unverified)</span></td></tr>
@@ -133,6 +141,9 @@
     <tr><td class="key">Emails</td><td>{{ brief.trust.emails | join(', ') or 'none found' }}</td></tr>
     <tr><td class="key">Phones</td><td>{{ brief.trust.phones | join(', ') or 'none found' }}</td></tr>
     <tr><td class="key">Addresses</td><td>{{ brief.trust.addresses | join('; ') or 'none found' }}</td></tr>
+    {% if brief.trust.opening_hours %}
+    <tr><td class="key">Opening hours</td><td>{{ brief.trust.opening_hours }}</td></tr>
+    {% endif %}
     <tr><td class="key">Socials</td><td>
       {% for name, url in brief.trust.socials.items() %}
         <a href="{{ url }}" rel="noopener nofollow" target="_blank">{{ name }}</a>{% if not loop.last %}, {% endif %}

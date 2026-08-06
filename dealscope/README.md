@@ -176,7 +176,25 @@ for evidence in brief.all_evidence():
 Questions adapt to the model. A SaaS business gets asked about net revenue
 retention and CAC payback; an e-commerce business about AOV, supplier terms, and
 blended ROAS; an agency about client concentration and how much delivery work
-the owner personally does.
+the owner personally does; a landscaper or plumber about seasonality, crew
+turnover, whether the vehicles are owned or financed, and which licences
+transfer on completion.
+
+### Local trade businesses
+
+Landscapers, plumbers, HVAC firms, salons and clinics are a large share of the
+businesses that actually change hands, and they are read differently from tech
+companies:
+
+- **They are recognised as their own revenue model** — quoted jobs and callouts,
+  not subscriptions or consulting engagements.
+- **Service area, opening hours, and licence/insurance claims** are extracted,
+  because those are what a trade business publishes instead of a pricing page.
+- **Momentum is reported as "not assessable" rather than low.** A plumber has no
+  reason to blog or post jobs; scoring them on publishing cadence measures the
+  yardstick, not the company.
+- **Absent pricing is not flagged.** Every job is quoted, so no price list is
+  normal — flagging it would be noise dressed as insight.
 
 ## Yes, this is web scraping — the polite kind
 
@@ -264,5 +282,5 @@ Corporate proxies are picked up from `HTTPS_PROXY` / `NO_PROXY`.
 python -m pytest
 ```
 
-89 tests. Most run offline against synthetic fixture sites; the rendering tests
+102 tests. Most run offline against synthetic fixture sites; the rendering tests
 use a local HTTP server and skip when no browser is installed.

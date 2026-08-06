@@ -247,6 +247,7 @@ def analyze(
             named_people=people_data["named_people"],
             leadership=people_data["leadership"],
             locations=contact_data["locations"],
+            service_areas=contact_data["service_areas"],
             named_customers=people_data["named_customers"],
             customer_count_claim=people_data["customer_count_claim"],
             founded_year=identity_data["founded_year"],
@@ -279,6 +280,7 @@ def analyze(
             emails=contact_data["emails"],
             phones=contact_data["phones"],
             addresses=contact_data["addresses"],
+            opening_hours=contact_data["opening_hours"],
             socials=contact_data["socials"],
             evidence=contact_evidence,
         )

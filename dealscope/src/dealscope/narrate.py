@@ -75,7 +75,12 @@ def build_headline(brief: CompanyBrief, today: date) -> str:
         bits.append(brief.industry_tags[0])
 
     if model.sales_motion != "unknown":
-        bits.append(f"{model.sales_motion} sales")
+        # "sales-led sales" reads badly, and for a trade business the accurate
+        # description is that everything routes to a phone call or a quote.
+        if model.primary == "local_services":
+            bits.append("quote-led")
+        else:
+            bits.append(f"{model.sales_motion} sales")
     if brief.scale.headcount_estimate:
         bits.append(f"{brief.scale.headcount_estimate} people")
     if brief.momentum.open_roles:
@@ -126,9 +131,14 @@ def build_deterministic(brief: CompanyBrief, today: date) -> str:
         if model.plan_names:
             money += f" Plans are named {_humanize(model.plan_names, 4)}."
     if model.sales_motion != "unknown":
+        local = model.primary == "local_services"
         motion = {
             "self-serve": "buyers can sign up without talking to anyone",
-            "sales-led": "the calls to action route to a demo or a sales conversation",
+            "sales-led": (
+                "the site is built around getting people to call or request a quote"
+                if local
+                else "the calls to action route to a demo or a sales conversation"
+            ),
             "hybrid": "there is both a self-serve path and a sales-led one",
         }.get(model.sales_motion, "")
         if motion:
@@ -152,6 +162,10 @@ def build_deterministic(brief: CompanyBrief, today: date) -> str:
         shape.append(f"the site claims “{scale.customer_count_claim}”")
     if scale.locations:
         shape.append(f"it lists a presence in {_humanize(scale.locations, 2)}")
+    if scale.service_areas:
+        shape.append(f"it advertises serving {_humanize(scale.service_areas, 2)}")
+    if brief.trust.opening_hours:
+        shape.append(f"published hours are {brief.trust.opening_hours}")
 
     activity: list[str] = []
     if momentum.open_roles:
@@ -166,6 +180,11 @@ def build_deterministic(brief: CompanyBrief, today: date) -> str:
     fresh = _freshness(brief, today)
     if fresh:
         activity.append(f"the blog is {fresh}" if "publishing" in fresh else f"the blog was {fresh}")
+    elif brief.scores is not None and not brief.scores.momentum.assessable:
+        activity.append(
+            "there is no blog or careers page, which is normal for this kind of "
+            "business and says nothing about how it is trading"
+        )
     if momentum.funding_mentions:
         activity.append(f"the site mentions {momentum.funding_mentions[0]}")
     if momentum.ownership_notes:

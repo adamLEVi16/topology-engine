@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import Any
 
 from ..fetch import make_soup
@@ -32,7 +33,30 @@ INDUSTRY_KEYWORDS: dict[str, tuple[str, ...]] = {
     "Security": ("cybersecurity", "threat", "vulnerability", "endpoint", "zero trust"),
     "AI / ML": ("machine learning", "artificial intelligence", " llm", "neural", "ai-powered"),
     "Nonprofit": ("donate", "nonprofit", "501(c)(3)", "our mission is to", "charity"),
+    "Local trade services": (
+        "free estimate", "licensed and insured", "licensed & insured", "serving",
+        "service area", "schedule an appointment", "call now", "emergency service",
+        "residential and commercial", "residential & commercial", "family owned",
+        "family-owned", "years of experience", "fully insured", "same day service",
+    ),
 }
+
+
+@lru_cache(maxsize=512)
+def _keyword_pattern(word: str) -> re.Pattern[str]:
+    """Whole-word matcher for a keyword.
+
+    Plain substring counting is why a landscaping company once scored as a
+    developer-tools business: "api" appears inside "landsc-api-ng". Keywords
+    that start or end with a word character get a boundary on that side.
+    """
+    left = r"\b" if word[:1].isalnum() else ""
+    right = r"\b" if word[-1:].isalnum() else ""
+    return re.compile(left + re.escape(word) + right, re.I)
+
+
+def count_keyword(corpus: str, word: str) -> int:
+    return len(_keyword_pattern(word).findall(corpus))
 
 # The revenue model is decided from far stronger evidence than loose keyword
 # counting, so it leads the sector description. Without this, a shoe shop whose
@@ -41,6 +65,7 @@ MODEL_TO_INDUSTRY = {
     "saas": "SaaS / software",
     "ecommerce": "E-commerce / retail",
     "services": "Professional services",
+    "local_services": "Local trade services",
     "marketplace": "Marketplace / platform",
     "media": "Media / publishing",
     "hardware": "Hardware / physical products",
@@ -241,11 +266,17 @@ def extract(
     ).lower()
     hits: list[tuple[str, int]] = []
     for label, keywords in INDUSTRY_KEYWORDS.items():
-        count = sum(corpus.count(word) for word in keywords)
+        count = sum(count_keyword(corpus, word) for word in keywords)
         # One stray keyword is noise; a sector should show up repeatedly.
         if count >= 2:
             hits.append((label, count))
     hits.sort(key=lambda kv: -kv[1])
+    # A weak runner-up is noise, not a second sector — it is how an HVAC firm
+    # picked up "Hospitality / food" off a couple of stray words. Keep only
+    # tags that are a real fraction of the strongest signal.
+    if hits:
+        floor = max(2, hits[0][1] * 0.35)
+        hits = [(label, count) for label, count in hits if count >= floor]
     tags = [label for label, _ in hits[:3]]
 
     seeded = MODEL_TO_INDUSTRY.get(business_model)

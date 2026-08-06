@@ -49,6 +49,31 @@ US_ADDRESS = re.compile(
     re.I,
 )
 
+# What a local trade business publishes instead of SOC 2: where it works, when
+# it is open, and whether it is licensed. These are its real credibility signals.
+SERVICE_AREA = re.compile(
+    r"\b(?:serving|proudly serving|service(?:s)? (?:area|areas)|areas we serve|"
+    r"we serve|serving the)\s*:?\s*(?P<area>[A-Z][\w.'\-]*(?:[ ,&/]+(?:and\s+)?[A-Z][\w.'\-]*){0,8})",
+)
+HOURS = re.compile(
+    r"\b(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?\s*[-–—to]{1,3}\s*"
+    r"(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?[^\n]{0,30}?"
+    r"\d{1,2}(?::\d{2})?\s*(?:am|pm)[^\n]{0,20}",
+    re.I,
+)
+ALWAYS_OPEN = re.compile(r"\b(24[/ ]?7|24 hours a day|open 24 hours|around the clock)\b", re.I)
+
+LOCAL_CREDENTIALS: dict[str, str] = {
+    "Licensed & insured": r"\blicen[cs]ed\s*(?:and|&)\s*insured\b",
+    "Bonded & insured": r"\bbonded\s*(?:and|&)\s*insured\b",
+    "Fully insured": r"\bfully insured\b",
+    "State licence number published": r"\b(?:lic(?:ense|ence)?\.?\s*(?:no\.?|#|number)\s*[:.]?\s*[A-Z]{0,3}[- ]?\d{4,})",
+    "BBB accredited": r"\bbbb\s*(?:accredited|a\+|rating)\b",
+    "EPA certified": r"\bepa\s*(?:certified|certification)\b",
+    "NATE certified": r"\bnate[- ]certified\b",
+    "Certified arborist": r"\bcertified arborists?\b",
+}
+
 COMPLIANCE: dict[str, str] = {
     "SOC 2": r"\bsoc\s?-?\s?2\b",
     "ISO 27001": r"\biso[\s/-]?27001\b",
@@ -122,6 +147,8 @@ def extract(pages: list[Page], domain: str) -> tuple[dict[str, Any], list[Eviden
         "socials": {},
         "legal_pages": {},
         "compliance_claims": [],
+        "service_areas": [],
+        "opening_hours": "",
     }
 
     # --- socials (scan every page: they usually live in the footer) ---
@@ -219,8 +246,56 @@ def extract(pages: list[Page], domain: str) -> tuple[dict[str, Any], list[Eviden
             Evidence("trust.legal_page", label[:60], page.final_url, "link", 0.9)
         )
 
-    # --- compliance claims ---
+    # --- service areas, hours, and local credentials ---
     corpus = st.joined_text(all_ok, 120_000)
+
+    areas: list[str] = []
+    for match in SERVICE_AREA.finditer(corpus):
+        area = " ".join(match.group("area").split()).strip(" ,&/")
+        # "Serving Since" and similar sentence fragments are not places.
+        if len(area) < 3 or area.lower() in ("since", "you", "our", "the", "all", "we"):
+            continue
+        if area.lower() not in {a.lower() for a in areas}:
+            areas.append(area)
+        if len(areas) >= 4:
+            break
+    if areas:
+        data["service_areas"] = areas
+        source = next(
+            (p.final_url for p in all_ok if SERVICE_AREA.search(p.text)), all_ok[0].final_url
+        )
+        evidence.append(
+            Evidence("scale.service_area", "; ".join(areas), source, "regex", 0.55)
+        )
+
+    hours_match = HOURS.search(corpus)
+    if hours_match:
+        data["opening_hours"] = " ".join(hours_match.group(0).split())[:120]
+    elif ALWAYS_OPEN.search(corpus):
+        data["opening_hours"] = "advertises 24/7 availability"
+    if data["opening_hours"]:
+        source = next(
+            (p.final_url for p in all_ok if HOURS.search(p.text) or ALWAYS_OPEN.search(p.text)),
+            all_ok[0].final_url,
+        )
+        evidence.append(
+            Evidence("trust.hours", data["opening_hours"], source, "regex", 0.6)
+        )
+
+    for label, pattern in LOCAL_CREDENTIALS.items():
+        match = re.search(pattern, corpus, re.I)
+        if match:
+            data["compliance_claims"].append(label)
+            source = next(
+                (p.final_url for p in all_ok if re.search(pattern, p.text, re.I)),
+                all_ok[0].final_url if all_ok else "",
+            )
+            evidence.append(
+                Evidence("trust.credential", label, source, "regex", 0.5,
+                         snippet=f"claimed on the site: “{match.group(0)[:60]}”")
+            )
+
+    # --- compliance claims ---
     for label, pattern in COMPLIANCE.items():
         match = re.search(pattern, corpus, re.I)
         if match:

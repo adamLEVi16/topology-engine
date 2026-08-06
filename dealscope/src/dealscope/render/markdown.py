@@ -57,7 +57,8 @@ def to_markdown(brief: CompanyBrief) -> str:
         out.append("|---|---:|---|---|")
         for label, score in brief.scores.as_pairs():
             basis = "; ".join(score.rationale) or "—"
-            out.append(f"| {label} | {score.value:.0f}/100 | {score.band} | {basis} |")
+            shown = f"{score.value:.0f}/100" if score.assessable else "not measured"
+            out.append(f"| {label} | {shown} | {score.band} | {basis} |")
         out.append("")
         out.append(
             "_Scores describe what the public website shows, not the quality of the "
@@ -95,6 +96,8 @@ def to_markdown(brief: CompanyBrief) -> str:
         out.append(_row("Basis", scale.headcount_basis))
     out.append(_row("Founded", str(scale.founded_year) if scale.founded_year else "not stated"))
     out.append(_row("Locations", ", ".join(scale.locations) or "not stated"))
+    if scale.service_areas:
+        out.append(_row("Service area", "; ".join(scale.service_areas)))
     out.append(_row("Named customers", ", ".join(scale.named_customers) or "none found"))
     if scale.customer_count_claim:
         out.append(_row("Customer claim", f"“{scale.customer_count_claim}” (marketing claim)"))
@@ -172,6 +175,8 @@ def to_markdown(brief: CompanyBrief) -> str:
     out.append(_row("Emails", ", ".join(trust.emails) or "none found"))
     out.append(_row("Phones", ", ".join(trust.phones) or "none found"))
     out.append(_row("Addresses", "; ".join(trust.addresses) or "none found"))
+    if trust.opening_hours:
+        out.append(_row("Opening hours", trust.opening_hours))
     out.append(
         _row("Socials", ", ".join(f"[{k}]({v})" for k, v in trust.socials.items()) or "none found")
     )
@@ -268,6 +273,9 @@ def to_text(brief: CompanyBrief) -> str:
     if brief.scores:
         lines.append("SCORES")
         for label, score in brief.scores.as_pairs():
+            if not score.assessable:
+                lines.append(f"  {label:<18} {'·' * 20}      —  not assessable for this business")
+                continue
             bar = "█" * int(score.value / 5) + "·" * (20 - int(score.value / 5))
             lines.append(f"  {label:<18} {bar} {score.value:5.0f}/100  {score.band}")
         lines.append("")

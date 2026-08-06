@@ -50,6 +50,21 @@ MODEL_SIGNALS: dict[str, tuple[tuple[str, float], ...]] = {
         (r"\b(we (design|build|help|deliver)|our team (will|can))\b", 1.0),
         (r"\b(request a (quote|proposal)|get a quote)\b", 2.0),
     ),
+    # Main Street businesses — landscapers, HVAC, plumbers, salons, clinics.
+    # They speak a different language from B2B consultancies: they sell a visit,
+    # not an engagement, and the whole site is built around phoning them.
+    "local_services": (
+        (r"\b(free (estimate|quote|inspection)|no obligation (quote|estimate))\b", 4.0),
+        (r"\b(licen[cs]ed (and|&) insured|fully insured|bonded (and|&) insured)\b", 4.0),
+        (r"\b(call (now|us|today)|give us a call|call for a)\b", 2.5),
+        (r"\b(schedule (an |your )?(appointment|service|visit|consultation)|book (online|now|a visit))\b", 3.0),
+        (r"\b(serving\s+[A-Z][\w.\- ]{2,40}(county|area|and surrounding|since)?|service area|areas we serve)\b", 3.0),
+        (r"\b(residential (and|&) commercial|commercial (and|&) residential)\b", 3.0),
+        (r"\b(emergency (service|repair|call)|24/7|same[- ]day service)\b", 2.5),
+        (r"\b(family[- ]owned|locally owned|third[- ]generation|second[- ]generation)\b", 2.5),
+        (r"\b(installation|repair|maintenance|cleanup|inspection)s?\b", 1.0),
+        (r"\b(satisfaction guaranteed|free consultation|senior discount|financing available)\b", 1.5),
+    ),
     "marketplace": (
         (r"\b(buyers? and sellers?|sellers?|vendors?|merchants?)\b", 2.0),
         (r"\b(list(ing)?s? (on|your)|become a (seller|host|partner|provider))\b", 3.0),
@@ -72,6 +87,7 @@ MODEL_LABELS = {
     "saas": "Software subscription (SaaS)",
     "ecommerce": "E-commerce / direct product sales",
     "services": "Services / consulting",
+    "local_services": "Local trade services (jobs and callouts)",
     "marketplace": "Marketplace / platform",
     "media": "Media, content, or advertising",
     "hardware": "Hardware / physical products",
@@ -83,6 +99,7 @@ MODEL_PHRASES = {
     "saas": "software subscriptions",
     "ecommerce": "direct product sales",
     "services": "services and consulting work",
+    "local_services": "quoted jobs and callouts for local customers",
     "marketplace": "marketplace or platform transactions",
     "media": "media, content, or advertising",
     "hardware": "hardware and physical product sales",
@@ -98,7 +115,10 @@ SELF_SERVE = re.compile(
 )
 SALES_LED = re.compile(
     r"\b(contact sales|talk to (sales|us)|book a (demo|call)|request a (demo|quote|proposal)|"
-    r"get in touch|schedule a (demo|call)|custom pricing|enterprise pricing)\b",
+    r"get in touch|schedule a (demo|call)|custom pricing|enterprise pricing|"
+    # Local businesses sell the same way: they want you to call or ask.
+    r"get a (quote|estimate)|free estimate|request service|"
+    r"schedule (an |your )?(appointment|service|visit)|call (now|today|us))\b",
     re.I,
 )
 

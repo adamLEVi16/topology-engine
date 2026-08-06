@@ -188,6 +188,7 @@ class Scale:
     named_people: list[dict[str, str]] = field(default_factory=list)
     leadership: list[dict[str, str]] = field(default_factory=list)
     locations: list[str] = field(default_factory=list)
+    service_areas: list[str] = field(default_factory=list)
     named_customers: list[str] = field(default_factory=list)
     customer_count_claim: str = ""
     founded_year: int | None = None
@@ -223,6 +224,7 @@ class TrustProfile:
     emails: list[str] = field(default_factory=list)
     phones: list[str] = field(default_factory=list)
     addresses: list[str] = field(default_factory=list)
+    opening_hours: str = ""
     socials: dict[str, str] = field(default_factory=dict)
     evidence: list[Evidence] = field(default_factory=list)
 
@@ -232,6 +234,10 @@ class Score:
     value: float          # 0-100
     band: str             # thin | emerging | established | strong
     rationale: list[str] = field(default_factory=list)
+    # Some measures simply do not apply to some businesses — a landscaper has no
+    # reason to blog, so a low momentum score would say more about the yardstick
+    # than the company. Those are reported as unmeasured rather than as low.
+    assessable: bool = True
 
 
 @dataclass
