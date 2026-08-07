@@ -27,34 +27,44 @@ dealscope/
     discovery.py  fetch.py  models.py  narrate.py  scoring.py  web.py
     extract/     commerce.py contact.py content.py hiring.py identity.py
                  people.py structured.py tech.py
+    sources/     fmcsa.py            (public records, not the company's site)
     render/      html.py markdown.py
     templates/   *.html  (Jinja2)
-  tests/         ~1350 lines, 102 tests
+  tests/         8 files, ~1,580 lines, 121 tests
 ```
 
-About 5,700 lines of source, 1,350 of tests. Python 3.10+. Dependencies:
-`requests`, `beautifulsoup4`, `lxml`, `Jinja2`, and optionally `playwright`.
+~6,200 lines of source, ~1,580 of tests. Python 3.10+. Dependencies:
+`requests`, `beautifulsoup4`, `lxml`, `Jinja2`; optionally `playwright`.
 
 ## What the project does
 
-`dealscope` reads a company's public website and produces a short brief for
-someone considering **buying that business**. Domain in, brief out:
+`dealscope` reads a company's public website — and, optionally, public
+records — and produces a short brief for someone considering **buying that
+business**. Domain in, brief out:
 
 1. `fetch.py` — polite HTTP: robots.txt, `Crawl-delay`, `Retry-After`,
-   per-host rate limiting, disk cache, byte caps.
-2. `discovery.py` — decides which pages matter (pricing, about, team, careers,
-   customers, legal) by classifying links, reading sitemaps, and guessing
-   conventional paths. Returns ranked candidates per role.
-3. `analyzer.py` — orchestrates: fetch homepage, plan candidates, fetch with
-   fallback across candidates, run extractors, score, narrate.
-4. `extract/*` — regex and BeautifulSoup heuristics producing facts plus
+   per-host rate limiting, disk cache with pruning, byte caps, and a `post()`
+   used by records lookups.
+2. `browser.py` — optional Playwright fallback, used only when a page comes
+   back too thin to be the whole page. Must degrade silently when absent.
+3. `discovery.py` — decides which pages matter (pricing, about, team, careers,
+   customers, legal) by classifying links, reading sitemaps, applying
+   platform-specific path knowledge, and guessing conventional paths. Returns
+   ranked candidates per role.
+4. `analyzer.py` — orchestrates: fetch homepage, plan candidates, fetch with
+   fallback across candidates and rescue passes, optionally re-render, run
+   extractors, optionally hit FMCSA, score, narrate.
+5. `extract/*` — regex and BeautifulSoup heuristics producing facts plus
    `Evidence` records (field, value, source URL, method, confidence).
-5. `scoring.py` — maturity / momentum / transparency / evidence-coverage
-   scores, risk flags, unknowns, and diligence questions.
-6. `narrate.py` — deterministic prose; optionally hands a *fact sheet* (never
+6. `sources/fmcsa.py` — matches a company to a federal motor-carrier record
+   and pulls fleet size, driver count, safety and status data.
+7. `scoring.py` — maturity / momentum / transparency / evidence-coverage
+   scores, risk flags, unknowns, and diligence questions. Business-type aware:
+   some measures are marked `assessable=False` rather than scored low.
+8. `narrate.py` — deterministic prose; optionally hands a *fact sheet* (never
    raw pages) to Claude for a rewrite.
-7. `render/`, `templates/` — text, Markdown, JSON, HTML output.
-8. `web.py` — stdlib HTTP server with background jobs and a polling page.
+9. `render/`, `templates/` — text, Markdown, JSON, HTML output.
+10. `web.py` — stdlib HTTP server, background jobs, self-refreshing progress page.
 
 ## Design principles it is meant to honour
 
@@ -64,11 +74,12 @@ Judge the code against these, and tell me where it fails them:
    `Evidence` record with a URL, extraction method, and confidence.
 2. **Absence is reported as absence, never as a verdict.** "No pricing found"
    is a gap in the brief, not a judgement on the company. Where robots.txt
-   blocks a page or the site is client-rendered, the brief must say so.
+   blocks a page, the site is client-rendered, or a records match is too weak,
+   the brief must say so.
 3. **Never invent.** The deterministic narrator must be structurally incapable
    of stating something the extractors did not observe.
 4. **Politeness is not optional.** There is deliberately no flag to disable
-   robots.txt compliance.
+   robots.txt compliance, and no attempt to evade any block.
 5. **The scores matter less than the questions.** Uncertainty must be visible.
 
 ## Where I most want your attention
@@ -77,27 +88,34 @@ Ordered by how much I care:
 
 1. **Correctness of the heuristics.** `extract/` is regex-heavy. Hunt for
    patterns that over-match, match across line boundaries, match mid-token, or
-   attribute third-party content to the company being analyzed. This code has
-   already produced: a landscaping company classified as "developer tools"
-   (`api` matched inside `landscaping`), `776 people` extracted from
-   `"33,776 people"`, and a tech publication's articles about *other* companies
-   read as its own funding history. Assume more of these exist.
+   attribute third-party content to the company being analyzed. Bugs of exactly
+   these kinds have already shipped and been fixed: a landscaping company
+   classified as "developer tools" (`api` matched inside `landscaping`);
+   `776 people` extracted from `"33,776 people"`; a tech publication's articles
+   about *other* companies read as its own funding history. **Assume more
+   exist — the last two are still unfixed at the time of writing.**
 2. **Self-contradiction.** The narrative is assembled from independent
-   fragments, so it can assert "no pricing found" and then list prices. Find
-   every path where two sections can disagree.
-3. **Scoring soundness.** Weights in `scoring.py` are hand-picked. Are they
-   internally consistent? Can a score be misleading rather than merely wrong?
-   Is `assessable=False` handled everywhere it should be?
-4. **Robustness.** `analyze()` promises never to raise on network or parsing
-   failure. Verify that. Look at `browser.py` degradation paths and `web.py`
-   threading — the job store is mutated from request threads and worker threads.
-5. **Security.** Templates render scraped third-party content; check escaping
-   is complete. The web server accepts a user-supplied domain — check for SSRF
-   (can it be pointed at `localhost`, cloud metadata endpoints, or internal
-   IPs?), path traversal in the cache key, and resource exhaustion.
-6. **Test quality.** Do the tests actually pin behaviour, or do they restate
-   the implementation? Where is coverage thin? Which of the bugs listed above
-   would the current suite have caught?
+   fragments, so it can assert "no pricing found" and then list prices two
+   sentences later. This is a known live defect. Find every path where two
+   sections of a brief can disagree.
+3. **Entity matching in `sources/fmcsa.py`.** Attaching the wrong carrier's
+   fleet size and crash history to a business would be the worst failure this
+   tool can produce. Scrutinise the thresholds, the runner-up margin rule, and
+   the name normalisation. Can a wrong match get through? Can a correct one be
+   rejected too eagerly?
+4. **Scoring soundness.** Weights in `scoring.py` are hand-picked. Are they
+   internally consistent? Can a score mislead rather than merely be wrong? Is
+   `assessable=False` honoured everywhere it should be, including all renderers?
+5. **Robustness.** `analyze()` promises never to raise on network or parsing
+   failure. Verify that. Check `browser.py` degradation paths, and `web.py`
+   threading — the job store is mutated from both request and worker threads.
+6. **Security.** Templates render scraped third-party content; check escaping is
+   complete. The web server accepts a user-supplied domain — check for **SSRF**
+   (can it be pointed at `localhost`, cloud metadata endpoints, or private IP
+   ranges?), path traversal in cache keys, and resource exhaustion.
+7. **Test quality.** Do the tests pin behaviour, or restate the implementation?
+   Where is coverage thin? Which of the known bugs above would the current
+   suite have caught?
 
 ## What not to spend time on
 
