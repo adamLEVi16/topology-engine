@@ -48,6 +48,10 @@ class Config:
     use_js: bool = True
     js_wait_ms: int = 1200
 
+    # Public-records lookups. Off by default: FMCSA covers US motor carriers
+    # only, so it is opt-in rather than a cost every analysis pays.
+    use_fmcsa: bool = False
+
     # Caching
     cache_dir: Path = field(default_factory=_default_cache_dir)
     cache_ttl: int = 86_400  # 24h

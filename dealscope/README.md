@@ -196,6 +196,42 @@ companies:
 - **Absent pricing is not flagged.** Every job is quoted, so no price list is
   normal — flagging it would be noise dressed as insight.
 
+## Public records: the federal carrier register
+
+A website is what a business says about itself. Filings are what it had to
+declare. For a fleet business — a haulier, a FedEx ISP, a landscaper with
+trucks — the filings are far better evidence, and they exist even when the
+business barely has a website.
+
+```bash
+python -m dealscope analyze acme-hauling.com --fmcsa
+```
+
+This matches the company against [FMCSA SAFER](https://safer.fmcsa.dot.gov/)
+and adds a section carrying **power units (trucks), driver count, operating
+status, inspection and crash counts, out-of-service rate, and the MCS-150
+filing date** — every field linked to the SAFER record it came from. Power
+units is the closest thing to a hard measure of size this tool can obtain
+anywhere: a number filed with the federal government, not a claim in marketing
+copy. It also feeds the maturity score and raises real risk flags — an inactive
+carrier, or an MCS-150 more than two years stale.
+
+**Matching is the risk, not fetching.** Attaching the wrong carrier's crash
+history to a business would be worse than returning nothing, so a match must
+clear a name-similarity threshold *and* beat the runner-up by a margin. Where it
+cannot, the brief says so and tells you what it saw:
+
+```
+_No record attached: several FMCSA records match "Swift Transportation" about
+equally well (closest: 2 SWIFT TRANSPORTATION LLC, USDOT 4336702); not
+attaching one without a stronger signal_
+```
+
+That is the intended outcome, not a failure — the answer is to ask the seller
+for the USDOT number rather than to guess. SAFER is public, serves no
+robots.txt, and needs no key; requests still go through the same rate-limited,
+cached fetcher as everything else. US motor carriers only, so it is opt-in.
+
 ## Yes, this is web scraping — the polite kind
 
 Every request:
@@ -282,5 +318,5 @@ Corporate proxies are picked up from `HTTPS_PROXY` / `NO_PROXY`.
 python -m pytest
 ```
 
-102 tests. Most run offline against synthetic fixture sites; the rendering tests
+121 tests. Most run offline against synthetic fixture sites; the rendering tests
 use a local HTTP server and skip when no browser is installed.

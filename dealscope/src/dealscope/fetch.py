@@ -23,7 +23,7 @@ import urllib.robotparser
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import urlencode, urljoin, urlparse, urlunparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -453,6 +453,60 @@ class Fetcher:
             page.title = page_title(rendered) or page.title
             page.rendered = True
             self.render_count += 1
+
+    def post(self, url: str, data: dict[str, str], role: str = "other") -> Page:
+        """POST a form and return the response page.
+
+        Needed because some public records systems — FMCSA's name search among
+        them — only accept searches as form posts. Same politeness rules apply:
+        robots is checked, the host delay is honoured, and the response is
+        cached under a key that includes the submitted fields.
+        """
+        url = clean_url(url)
+        if not url:
+            return Page(url=url, role=role, error="unsupported URL scheme")
+
+        cache_key = url + "|POST|" + urlencode(sorted(data.items()))
+        cached = self._read_cache(cache_key)
+        if cached is not None:
+            cached.role = role
+            return cached
+
+        if not self.allowed(url):
+            self.notes.append(f"robots.txt disallows {url}")
+            self.robots_blocked.append(url)
+            return Page(url=url, role=role, error="disallowed by robots.txt")
+
+        try:
+            self._wait(urlparse(url).netloc, self.delay_for(url))
+            self.fetch_count += 1
+            resp = self.session.post(
+                url,
+                data=data,
+                timeout=self.config.timeout,
+                verify=self.config.verify_tls,
+                allow_redirects=True,
+            )
+        except requests.RequestException as exc:
+            return Page(url=url, role=role, error=f"{type(exc).__name__}: {exc}")
+
+        page = Page(
+            url=url,
+            final_url=str(resp.url),
+            status=resp.status_code,
+            role=role,
+            html=resp.text[: self.config.max_bytes],
+            headers={k.lower(): v for k, v in resp.headers.items()},
+            fetched_at=datetime.now(timezone.utc),
+        )
+        if page.status >= 400:
+            page.error = f"HTTP {page.status}"
+            return page
+
+        page.text = html_to_text(page.html)
+        page.title = page_title(page.html)
+        self._write_cache(cache_key, page)
+        return page
 
     def get_text(self, url: str) -> str:
         """Fetch a non-HTML resource (sitemaps) as text; empty string on failure."""

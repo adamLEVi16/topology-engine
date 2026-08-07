@@ -159,6 +159,18 @@ def score_maturity(brief: CompanyBrief, today: date) -> Score:
 
     # For a local business, coverage and credentials are what maturity looks
     # like — it has no plans, no logo wall, and no reason to have them.
+    # A federal filing outranks anything the site claims about itself.
+    fleet = brief.fleet
+    if fleet is not None and fleet.power_units:
+        if fleet.power_units >= 50:
+            points += 25; why.append(f"{fleet.power_units} power units on federal file")
+        elif fleet.power_units >= 10:
+            points += 18; why.append(f"{fleet.power_units} power units on federal file")
+        elif fleet.power_units >= 3:
+            points += 12; why.append(f"{fleet.power_units} power units on federal file")
+        else:
+            points += 5; why.append(f"{fleet.power_units} power unit(s) on federal file")
+
     if scale.service_areas:
         points += 8; why.append(f"publishes a service area ({scale.service_areas[0]})")
     if trust.opening_hours:
@@ -446,6 +458,32 @@ def build_risk_flags(
                 f"The site claims {claimed}. These were read off marketing copy — "
                 "ask for the current audit reports.",
             ))
+
+    fleet = brief.fleet
+    if fleet is not None:
+        if not fleet.is_active:
+            flags.append(RiskFlag(
+                "carrier_inactive", "Federal carrier authority is not active", "high",
+                f"FMCSA shows USDOT {fleet.usdot} as “{fleet.operating_status or 'not active'}”"
+                + (f", out of service since {fleet.out_of_service_date}" if fleet.out_of_service_date else "")
+                + ". A carrier that cannot legally operate is a different purchase entirely.",
+                evidence=[e for e in fleet.evidence if e.field.startswith("fleet.operating")],
+            ))
+        if fleet.mcs150_date is not None and (today - fleet.mcs150_date).days > 730:
+            flags.append(RiskFlag(
+                "stale_mcs150", "Federal registration details look stale", "medium",
+                f"The MCS-150 was last filed on {fleet.mcs150_date.isoformat()}, over two "
+                "years ago. Carriers must update it biennially, so the fleet and driver "
+                "counts above may be out of date — and late filing can suspend the "
+                "USDOT number.",
+                evidence=[e for e in fleet.evidence if e.field == "fleet.mcs150_date"],
+            ))
+    elif brief.fleet_note and "no FMCSA record found" not in brief.fleet_note:
+        flags.append(RiskFlag(
+            "carrier_unmatched", "Could not confidently match a federal carrier record", "low",
+            brief.fleet_note + ". Ask the seller for the USDOT number directly rather "
+            "than relying on a name match.",
+        ))
 
     errors = [p for p in brief.pages if p.get("error")]
     if len(errors) >= 3:

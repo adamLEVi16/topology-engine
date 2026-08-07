@@ -111,6 +111,49 @@ def to_markdown(brief: CompanyBrief) -> str:
             out.append(f"- **{person['name']}**{title}")
         out.append("")
 
+    # --- federal carrier record ---
+    fleet = brief.fleet
+    if fleet is not None or brief.fleet_note:
+        out.append("## Federal carrier record (FMCSA)")
+        out.append("")
+        if fleet is None:
+            out.append(f"_No record attached: {brief.fleet_note}_")
+            out.append("")
+        else:
+            out.append("| Field | Value |")
+            out.append("|---|---|")
+            out.append(_row("USDOT number", f"[{fleet.usdot}]({fleet.source_url})"))
+            out.append(_row("Legal name", fleet.legal_name))
+            if fleet.dba_name:
+                out.append(_row("DBA name", fleet.dba_name))
+            out.append(_row("Status", fleet.operating_status or "not stated"))
+            if fleet.out_of_service_date:
+                out.append(_row("Out of service since", fleet.out_of_service_date))
+            out.append(_row("**Power units (trucks)**", str(fleet.power_units)
+                            if fleet.power_units is not None else "not stated"))
+            out.append(_row("**Drivers**", str(fleet.drivers)
+                            if fleet.drivers is not None else "not stated"))
+            if fleet.inspections is not None:
+                out.append(_row("Inspections / crashes",
+                                f"{fleet.inspections} / {fleet.crashes}"))
+            if fleet.out_of_service_pct:
+                out.append(_row("Out-of-service rate",
+                                f"{fleet.out_of_service_pct}"
+                                + (f" (national average {fleet.national_average_pct})"
+                                   if fleet.national_average_pct else "")))
+            if fleet.mcs150_date:
+                out.append(_row("MCS-150 last filed", fleet.mcs150_date.isoformat()))
+            out.append(_row("Address on file", fleet.physical_address))
+            out.append(_row("Match confidence",
+                            f"{fleet.match_score:.0%} — {fleet.match_basis}; "
+                            f"{fleet.considered} candidate(s) considered"))
+            out.append("")
+            out.append(
+                "_Filed with the federal government, not claimed on a website. "
+                "Power units is the closest thing to a hard measure of size._"
+            )
+            out.append("")
+
     # --- momentum ---
     out.append("## Momentum")
     out.append("")

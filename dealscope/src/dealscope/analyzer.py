@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -23,6 +24,7 @@ from .models import (
     TrustProfile,
 )
 from .narrate import narrate
+from .sources import fmcsa
 from .scoring import (
     build_diligence_questions,
     build_risk_flags,
@@ -287,6 +289,23 @@ def analyze(
 
         brief.pages = [page.summary() for page in pages]
         brief.fetch_notes = fetcher.notes
+
+        # --- public records ---
+        if config.use_fmcsa:
+            say("Checking the FMCSA carrier register …")
+            state = ""
+            for candidate in brief.trust.addresses + brief.scale.locations:
+                found = re.search(r"\b([A-Z]{2})\b(?:\s+\d{5})?\s*$", candidate.strip())
+                if found:
+                    state = found.group(1)
+                    break
+            carrier, why_not = fmcsa.find_carrier(
+                fetcher, brief.name or host, state=state
+            )
+            brief.fleet = carrier
+            brief.fleet_note = why_not
+            if carrier is not None:
+                brief.scale.evidence.extend(carrier.evidence)
 
         say("Scoring …")
         brief.signals = build_signals(brief, today)

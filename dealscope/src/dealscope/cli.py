@@ -66,6 +66,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-js", action="store_true",
         help="never fall back to a headless browser on client-rendered pages",
     )
+    run.add_argument(
+        "--fmcsa", action="store_true",
+        help="also look up the federal carrier record (US motor carriers; "
+             "gives truck and driver counts)",
+    )
     run.add_argument("--llm", action="store_true",
                      help="rewrite the summary with Claude (needs ANTHROPIC_API_KEY)")
     run.add_argument("--llm-model", default=Config.llm_model,
@@ -97,6 +102,8 @@ def _config_from(args: argparse.Namespace) -> Config:
         config.use_cache = False
     if getattr(args, "no_js", False):
         config.use_js = False
+    if getattr(args, "fmcsa", False):
+        config.use_fmcsa = True
     if hasattr(args, "llm_model"):
         config.llm_model = args.llm_model
     return config

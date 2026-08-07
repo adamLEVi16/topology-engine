@@ -283,6 +283,12 @@ class CompanyBrief:
     operations: Operations = field(default_factory=Operations)
     trust: TrustProfile = field(default_factory=TrustProfile)
 
+    # Federal motor-carrier record, when one could be matched confidently.
+    # Typed loosely to keep this module free of source-specific imports; it is
+    # a ``sources.fmcsa.Carrier`` dataclass and serializes like any other.
+    fleet: Any = None
+    fleet_note: str = ""
+
     scores: ScoreCard | None = None
     signals: list[Signal] = field(default_factory=list)
     risk_flags: list[RiskFlag] = field(default_factory=list)
