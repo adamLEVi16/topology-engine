@@ -10,13 +10,26 @@ from dealscope.models import CompanyBrief
 from dealscope.render.html import render_working
 
 
-def test_job_store_trims_to_its_limit():
+def test_job_store_trims_finished_jobs_to_its_limit():
     store = web.JobStore(limit=3)
-    jobs = [store.create(f"site{i}.test", False) for i in range(5)]
+    jobs = []
+    for i in range(5):
+        job = store.create(f"site{i}.test", False)
+        job.status = "done"          # finished work is what may be evicted
+        jobs.append(job)
 
     assert store.get(jobs[0].id) is None  # oldest evicted
     assert store.get(jobs[4].id) is not None
     assert len(store._order) == 3
+
+
+def test_job_store_never_evicts_a_running_job():
+    """Evicting a live job left the reader seeing "expired" while it kept fetching."""
+    store = web.JobStore(limit=2)
+    running = [store.create(f"live{i}.test", False) for i in range(4)]
+
+    assert all(store.get(job.id) is not None for job in running)
+    assert store.running() == 4
 
 
 def test_job_store_hands_back_distinct_ids():

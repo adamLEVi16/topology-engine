@@ -323,6 +323,21 @@ def to_text(brief: CompanyBrief) -> str:
             lines.append(f"  {label:<18} {bar} {score.value:5.0f}/100  {score.band}")
         lines.append("")
 
+    fleet = brief.fleet
+    if fleet is not None:
+        lines.append("FEDERAL CARRIER RECORD (FMCSA)")
+        lines.append(f"  USDOT {fleet.usdot} — {fleet.display_name}")
+        lines.append(
+            f"  power units: {fleet.power_units}   drivers: {fleet.drivers}"
+            f"   status: {fleet.operating_status or 'not stated'}"
+        )
+        lines.append(f"  matched at {fleet.match_score:.0%} — {fleet.match_basis}")
+        lines.append("")
+    elif brief.fleet_note:
+        lines.append("FEDERAL CARRIER RECORD (FMCSA)")
+        lines.append(f"  no record attached: {brief.fleet_note}")
+        lines.append("")
+
     if brief.risk_flags:
         lines.append("RISK FLAGS")
         for flag in brief.risk_flags:

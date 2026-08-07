@@ -206,3 +206,79 @@ def test_json_render_round_trips(brief):
     assert restored["name"] == "Kettlewind"
     assert restored["scores"]["maturity"]["value"] > 0
     assert isinstance(restored["diligence_questions"], list)
+
+
+# --- regressions found in code review ---
+
+
+def test_analyze_returns_a_brief_when_the_pipeline_faults(monkeypatch):
+    """A tool fault must produce a brief that says so, never a traceback."""
+
+    class Exploding(FakeFetcher):
+        def get(self, url, role="other", force_render=False):
+            raise RuntimeError("disk on fire")
+
+    monkeypatch.setattr(analyzer, "Fetcher", lambda config: Exploding({}, config))
+    result = analyzer.analyze("boom.test", Config(delay=0, use_cache=False))
+
+    assert isinstance(result, CompanyBrief)
+    assert any(f.key in ("analysis_failed", "unreachable") for f in result.risk_flags)
+    assert result.narrative
+    assert result.diligence_questions
+
+
+def test_a_cache_write_failure_does_not_escape(tmp_path, monkeypatch):
+    """The NameError in the cache writer used to escape all the way to the CLI."""
+    from dealscope.fetch import Fetcher
+
+    fetcher = Fetcher(Config(use_cache=True, cache_dir=tmp_path, use_js=False, delay=0))
+    monkeypatch.setattr(
+        "pathlib.Path.write_text",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("read-only file system")),
+    )
+    page = make_page("https://a.test/", "home", "<html><body>hi</body></html>")
+    fetcher._write_cache("https://a.test/", page)   # must not raise
+    fetcher.close()
+
+
+def test_unknowns_never_deny_a_page_that_was_read(brief):
+    """A brief must not claim a page is missing while listing it as read."""
+    roles_read = {p["role"] for p in brief.pages if not p.get("error")}
+    joined = " ".join(brief.unknowns).lower()
+
+    if "careers" in roles_read:
+        assert "no careers page was found" not in joined
+    if "blog" in roles_read:
+        assert "no dated content was found" not in joined
+
+
+def test_the_money_paragraph_never_contradicts_itself(brief):
+    """"No pricing found" and a list of prices cannot both be true."""
+    narrative = brief.narrative.lower()
+    if "could not be established" in narrative and "charges" in narrative:
+        assert "published prices include" not in narrative
+
+
+def test_prices_without_a_known_model_do_not_produce_a_contradiction():
+    """The exact live defect: "no pricing found" beside a list of prices."""
+    from dealscope.narrate import build_deterministic
+
+    brief = CompanyBrief(domain="shop.test", name="Shop")
+    brief.business_model.primary = "unknown"
+    brief.business_model.price_points = ["$49 /mo", "$99 /mo"]
+    brief.scores = None
+
+    text = build_deterministic(brief, date.today()).lower()
+    assert not ("no pricing, plans, or checkout flow were found" in text
+                and "published prices include" in text)
+
+
+def test_unknowns_do_not_deny_a_careers_page_that_was_read():
+    brief = CompanyBrief(
+        domain="a.test",
+        pages=[{"role": "careers", "words": 300, "url": "u", "error": None}],
+    )
+    brief.momentum.open_roles = None
+    joined = " ".join(build_unknowns(brief))
+    assert "no careers page was found" not in joined
+    assert "listed nothing countable" in joined

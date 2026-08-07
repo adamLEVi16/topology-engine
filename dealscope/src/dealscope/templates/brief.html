@@ -95,6 +95,46 @@
   </table>
 </div>
 
+{% if brief.fleet or brief.fleet_note %}
+<h2>Federal carrier record (FMCSA)</h2>
+{% if not brief.fleet %}
+<div class="card"><p class="score-why">No record attached: {{ brief.fleet_note }}</p></div>
+{% else %}
+<div class="card table-wrap">
+  <table>
+    <tr><td class="key">USDOT number</td><td>
+      <a href="{{ brief.fleet.source_url }}" rel="noopener nofollow" target="_blank">{{ brief.fleet.usdot }}</a></td></tr>
+    <tr><td class="key">Legal name</td><td>{{ brief.fleet.legal_name }}</td></tr>
+    {% if brief.fleet.dba_name %}
+    <tr><td class="key">DBA name</td><td>{{ brief.fleet.dba_name }}</td></tr>
+    {% endif %}
+    <tr><td class="key">Status</td><td>{{ brief.fleet.operating_status or 'not stated' }}
+      {%- if brief.fleet.out_of_service_date %} — out of service since {{ brief.fleet.out_of_service_date }}{% endif %}</td></tr>
+    <tr><td class="key"><strong>Power units (trucks)</strong></td>
+        <td><strong>{{ brief.fleet.power_units if brief.fleet.power_units is not none else 'not stated' }}</strong></td></tr>
+    <tr><td class="key"><strong>Drivers</strong></td>
+        <td><strong>{{ brief.fleet.drivers if brief.fleet.drivers is not none else 'not stated' }}</strong></td></tr>
+    {% if brief.fleet.inspections is not none %}
+    <tr><td class="key">Inspections / crashes</td><td>{{ brief.fleet.inspections }} / {{ brief.fleet.crashes }}</td></tr>
+    {% endif %}
+    {% if brief.fleet.out_of_service_pct %}
+    <tr><td class="key">Out-of-service rate</td><td>{{ brief.fleet.out_of_service_pct }}
+      {%- if brief.fleet.national_average_pct %} (national average {{ brief.fleet.national_average_pct }}){% endif %}</td></tr>
+    {% endif %}
+    {% if brief.fleet.mcs150_date %}
+    <tr><td class="key">MCS-150 last filed</td><td>{{ brief.fleet.mcs150_date }}</td></tr>
+    {% endif %}
+    <tr><td class="key">Address on file</td><td>{{ brief.fleet.physical_address }}</td></tr>
+    <tr><td class="key">Match confidence</td><td>
+      {{ (brief.fleet.match_score * 100) | round | int }}% — {{ brief.fleet.match_basis }};
+      {{ brief.fleet.considered }} candidate(s) considered</td></tr>
+  </table>
+  <p class="score-why" style="margin-top:1rem">Filed with the federal government, not
+  claimed on a website. Power units is the closest thing to a hard measure of size.</p>
+</div>
+{% endif %}
+{% endif %}
+
 <h2>Momentum</h2>
 <div class="card table-wrap">
   <table>

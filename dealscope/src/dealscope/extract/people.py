@@ -62,6 +62,24 @@ NAME_STOPWORDS = {
 }
 
 
+# Whose name a buyer needs first. Lower sorts earlier.
+_SENIORITY = (
+    (re.compile(r"\b(founder|co-?founder|owner|ceo|chief executive)\b", re.I), 0),
+    (re.compile(r"\b(president|managing (director|partner))\b", re.I), 1),
+    (re.compile(r"\b(c[toifpm]o|chief \w+)\b", re.I), 2),
+    (re.compile(r"\b(vp|vice president)\b", re.I), 3),
+    (re.compile(r"\bhead of\b", re.I), 4),
+    (re.compile(r"\bdirector\b", re.I), 5),
+)
+
+
+def _seniority(title: str) -> int:
+    for pattern, rank in _SENIORITY:
+        if pattern.search(title or ""):
+            return rank
+    return 9
+
+
 def _plausible_name(name: str) -> bool:
     tokens = [t.strip(".,'’-").lower() for t in name.split()]
     if not (2 <= len(tokens) <= 3):
@@ -69,10 +87,15 @@ def _plausible_name(name: str) -> bool:
     return not any(token in NAME_STOPWORDS for token in tokens)
 
 
+# (?<![\d,.]) stops the digit group starting mid-number: "33,776 people" used
+# to yield 776. The second alternative also needs an ownership word — "serving
+# 4,500 people" is a customer count, not a headcount.
 HEADCOUNT = re.compile(
     r"\b(?:team of|we(?:'| a)?re a? ?team of|staff of|group of|family of|company of)\s+"
-    r"(?:about\s+|around\s+|over\s+|more than\s+|nearly\s+)?(\d{1,5})\b"
-    r"|\b(\d{1,5})\+?\s+(?:employees|people|staff|team members|professionals|engineers)\b",
+    r"(?:about\s+|around\s+|over\s+|more than\s+|nearly\s+)?(?<![\d,.])(\d{1,5})\b"
+    r"|\b(?:we (?:have|employ)|employing|with a team of|our team of)\s+"
+    r"(?:about\s+|around\s+|over\s+|more than\s+|nearly\s+)?(?<![\d,.])(\d{1,5})\+?\s+"
+    r"(?:employees|people|staff|team members|professionals|engineers)\b",
     re.I,
 )
 
@@ -245,6 +268,14 @@ CUSTOMER_CONTEXT = re.compile(
 )
 
 
+# Placeholder alt text on a logo wall. "Client" is a label, not a client.
+PLACEHOLDER_CUSTOMER = re.compile(
+    r"^(client|customer|company|brand|partner|logo|our client|case study|"
+    r"testimonial|read more|learn more|view|next|previous)s?$",
+    re.I,
+)
+
+
 def _logo_wall_images(soup, min_group: int = 3) -> set[int]:
     """Images belonging to a group of similar sibling images.
 
@@ -305,6 +336,8 @@ def _customers_from_logos(
                 continue
             cleaned = re.sub(r"\s*(logo|logotype|icon|wordmark)\s*$", "", alt, flags=re.I).strip()
             if len(cleaned) < 2 or NOT_A_NAME.search(cleaned):
+                continue
+            if PLACEHOLDER_CUSTOMER.match(cleaned):
                 continue
             # Logo walls are alt-tagged with bare brand names, not sentences.
             if len(cleaned.split()) > 4 or not re.match(r"^[A-Za-z0-9][\w&.,'’\- ]*$", cleaned):
@@ -370,7 +403,12 @@ def extract(
         merge(*_people_from_prose(team_pages, own_names, max_people))
 
     data["named_people"] = people[:max_people]
-    data["leadership"] = [p for p in data["named_people"] if EXEC_TITLE.search(p.get("title", ""))]
+    # Rank by seniority, not alphabetically. Sorting by first name pushed the
+    # CEO out of the summary behind two colleagues whose names start with A.
+    data["leadership"] = sorted(
+        (p for p in data["named_people"] if EXEC_TITLE.search(p.get("title", ""))),
+        key=lambda p: _seniority(p.get("title", "")),
+    )
     evidence.extend(people_evidence[:max_people])
 
     # --- headcount ---

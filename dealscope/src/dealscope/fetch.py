@@ -15,9 +15,11 @@ to reach anything behind authentication.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import logging
 import re
+import socket
 import time
 import urllib.robotparser
 from datetime import datetime, timezone
@@ -55,6 +57,48 @@ def normalize_domain(raw: str) -> str:
 
 def root_url(domain: str, scheme: str = "https") -> str:
     return f"{scheme}://{domain}/"
+
+
+class BlockedHost(ValueError):
+    """A host that resolves somewhere this tool must not reach."""
+
+
+def check_public_host(host: str) -> None:
+    """Refuse hosts that resolve to loopback, private, or link-local addresses.
+
+    The web UI analyses whatever domain a visitor types, so without this the
+    server is an open proxy into its own network: cloud metadata endpoints,
+    internal admin panels, and localhost services would all be fetched and
+    their contents printed into a brief. Checked before the first request and
+    again after every redirect, because a public domain can redirect inward.
+    """
+    if not host:
+        raise BlockedHost("no host to check")
+
+    try:
+        resolved = socket.getaddrinfo(host, None)
+    except socket.gaierror as exc:
+        raise BlockedHost(f"{host} does not resolve ({exc.strerror or exc})") from exc
+
+    for family, _type, _proto, _canon, sockaddr in resolved:
+        if family not in (socket.AF_INET, socket.AF_INET6):
+            continue
+        try:
+            address = ipaddress.ip_address(sockaddr[0])
+        except ValueError:
+            continue
+        if (
+            address.is_private
+            or address.is_loopback
+            or address.is_link_local
+            or address.is_reserved
+            or address.is_multicast
+            or address.is_unspecified
+        ):
+            raise BlockedHost(
+                f"{host} resolves to {address}, which is a private or "
+                "internal address; dealscope only reads public sites"
+            )
 
 
 def same_site(url: str, domain: str) -> bool:
@@ -251,7 +295,10 @@ class Fetcher:
 
     def _cache_path(self, url: str) -> Path:
         digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:24]
+        # Strip path separators and dot-runs: a host of ".." would otherwise
+        # write outside the directory prune_cache manages.
         host = re.sub(r"[^a-z0-9.-]+", "_", (urlparse(url).hostname or "unknown").lower())
+        host = re.sub(r"\.{2,}", ".", host).strip("._-") or "unknown"
         return self.config.cache_dir / host / f"{digest}.json"
 
     def _read_cache(self, key: str) -> Page | None:
@@ -305,7 +352,7 @@ class Fetcher:
                 encoding="utf-8",
             )
         except OSError as exc:
-            log.debug("could not cache %s: %s", url, exc)
+            log.debug("could not cache %s: %s", key, exc)
 
     # -- fetching --
 
@@ -332,6 +379,13 @@ class Fetcher:
             return Page(url=url, role=role, error="disallowed by robots.txt")
 
         host = urlparse(url).netloc
+        try:
+            if not self.config.allow_private_hosts:
+                check_public_host(urlparse(url).hostname or "")
+        except BlockedHost as exc:
+            self.notes.append(str(exc))
+            return Page(url=url, role=role, error=str(exc))
+
         delay = self.delay_for(url)
         last_error = "unknown error"
 
@@ -391,6 +445,13 @@ class Fetcher:
                     page.error = f"HTTP {page.status}"
                     return page
 
+                try:
+                    if not self.config.allow_private_hosts:
+                        check_public_host(urlparse(page.final_url).hostname or "")
+                except BlockedHost as exc:
+                    self.notes.append(f"redirected into a blocked address: {exc}")
+                    return Page(url=url, role=role, error=str(exc))
+
                 page.text = html_to_text(html)
                 page.title = page_title(html)
 
@@ -440,6 +501,12 @@ class Fetcher:
     def _render_into(self, page: Page, force: bool = False) -> None:
         """Replace a page's HTML with a browser-rendered version, if we can."""
         if self.renderer is None or not self.renderer.possible:
+            # Say so. A brief built without a browser must record that the
+            # site's client-rendered parts went unread, not stay silent.
+            reason = self.renderer.reason if self.renderer else "rendering is disabled"
+            note = f"headless rendering unavailable: {reason}"
+            if note not in self.notes:
+                self.notes.append(note)
             return
         rendered = self.renderer.render(page.final_url or page.url)
         if not rendered:

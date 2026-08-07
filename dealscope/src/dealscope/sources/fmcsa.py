@@ -89,8 +89,10 @@ class Carrier:
 
     @property
     def is_active(self) -> bool:
-        status = (self.operating_status or "").upper()
-        return "ACTIVE" in status and not self.out_of_service_date
+        # Exact compare: "ACTIVE" is a substring of "INACTIVE", which is the
+        # literal value SAFER writes for a deregistered carrier.
+        status = (self.operating_status or "").strip().upper()
+        return status == "ACTIVE" and not self.out_of_service_date
 
 
 # --- name handling ---------------------------------------------------------
@@ -116,12 +118,24 @@ def name_similarity(a: str, b: str) -> float:
         return 0.0
     if left == right:
         return 1.0
+    left_tokens, right_tokens = set(left.split()), set(right.split())
+    shared = left_tokens & right_tokens
+    union = left_tokens | right_tokens
+    jaccard = len(shared) / len(union) if union else 0.0
+
+    # A genuine shortening — "Retty Logistics" inside "Retty Logistics
+    # Services" — is a strong match. Requiring at least two shared words keeps
+    # a single common word ("Dot" in "Alpha Dot") from qualifying.
+    if shared and (left_tokens <= right_tokens or right_tokens <= left_tokens):
+        if min(len(left_tokens), len(right_tokens)) >= 2:
+            return max(0.85, jaccard)
+
+    # Character similarity on its own is fooled by shared word endings:
+    # "ace movers" scores 0.87 against "palace movers", which would attach a
+    # stranger's fleet and crash history to the wrong business. Cap it by how
+    # much the names agree word for word.
     ratio = SequenceMatcher(None, left, right).ratio()
-    # One name containing the other is a strong signal that plain character
-    # ratio understates ("retty" vs "retty logistics services").
-    if left in right or right in left:
-        ratio = max(ratio, 0.85)
-    return ratio
+    return min(ratio, jaccard + 0.25)
 
 
 # --- parsing ---------------------------------------------------------------

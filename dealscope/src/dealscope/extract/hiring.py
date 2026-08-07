@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from urllib.parse import urljoin, urlparse
+
 from ..fetch import make_soup
 from ..models import ROLE_CAREERS, Evidence, Page
 from . import structured as st
@@ -37,6 +39,14 @@ NO_OPENINGS = re.compile(
 
 APPLY_LINE = re.compile(r"\b(apply now|apply|view (job|role|position)|see (job|role))\b", re.I)
 
+# Navigation labels, not job titles.
+SECTION_INDEX = re.compile(
+    r"\s*(careers?|jobs?|open (jobs?|roles?|positions?)|openings?|vacancies|"
+    r"work (with us|here)|join (us|the team)|all (jobs?|roles?|openings?)|"
+    r"current (openings?|vacancies)|life at \w+|browse (jobs?|roles?))\s*",
+    re.I,
+)
+
 
 def _count_postings(page: Page) -> tuple[int, list[str], str]:
     """Return (count, role titles, how it was counted)."""
@@ -48,6 +58,7 @@ def _count_postings(page: Page) -> tuple[int, list[str], str]:
     soup = make_soup(page.html)
     titles: list[str] = []
     seen: set[str] = set()
+    own_path = (urlparse(page.final_url or page.url).path or "/").rstrip("/").lower()
 
     for anchor in soup.find_all("a", href=True):
         href = anchor["href"]
@@ -60,6 +71,16 @@ def _count_postings(page: Page) -> tuple[int, list[str], str]:
             continue
         if not text or len(text) > 90 or APPLY_LINE.fullmatch(text.lower()):
             continue
+
+        # Every careers page has a nav bar linking to itself and to sibling
+        # sections. Counting those turned "no open positions" into "2 open
+        # roles", with the nav labels printed as job titles.
+        target = (urlparse(urljoin(page.final_url or page.url, href)).path or "/").rstrip("/")
+        if target.lower() in (own_path, ""):
+            continue
+        if SECTION_INDEX.fullmatch(text.lower()):
+            continue
+
         key = text.lower()
         if key in seen:
             continue

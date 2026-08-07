@@ -233,3 +233,96 @@ def test_fleet_size_lifts_the_maturity_score():
     withfleet.fleet = carrier
 
     assert score_maturity(withfleet, date.today()).value > score_maturity(plain, date.today()).value
+
+
+# --- regressions found in code review ---
+
+
+@pytest.mark.parametrize(
+    "company,carrier_name",
+    [
+        ("Ace Movers", "Palace Movers LLC"),        # substring of a longer word
+        ("Ace", "Space Logistics"),
+        ("Art", "Stuart Trucking"),
+    ],
+)
+def test_a_name_that_is_merely_a_substring_is_not_a_match(company, carrier_name):
+    """"Ace Movers" is not "Palace Movers" — containment must be token-wise."""
+    assert fmcsa.name_similarity(company, carrier_name) < fmcsa.MIN_NAME_SIMILARITY
+
+
+def test_token_containment_still_counts_as_similar():
+    """A genuine shortening must still match: whole words, not characters."""
+    assert fmcsa.name_similarity("Retty Logistics", "Retty Logistics Services") > 0.8
+
+
+def test_a_substring_carrier_is_refused_end_to_end():
+    fetcher = FakeFetcher({"1597181": _snapshot_with(legal_name="PALACE MOVERS LLC")})
+    fetcher.search = 'href="query.asp?query_string=1597181"'
+
+    carrier, why_not = fmcsa.find_carrier(fetcher, "Ace Movers", state="AZ")
+    assert carrier is None, f"accepted a wrong carrier: {carrier}"
+    assert why_not
+
+
+@pytest.mark.parametrize(
+    "status,active",
+    [("ACTIVE", True), ("INACTIVE", False), ("inactive", False), ("", False)],
+)
+def test_inactive_is_not_read_as_active(status, active):
+    """"ACTIVE" in "INACTIVE" is True — the compare has to be exact."""
+    assert fmcsa.Carrier(operating_status=status).is_active is active
+
+
+def test_the_inactive_flag_fires_for_the_literal_status():
+    carrier = fmcsa.parse_snapshot(SNAPSHOT)
+    carrier.operating_status = "INACTIVE"      # exactly what SAFER writes
+    carrier.evidence = fmcsa.build_evidence(carrier)
+
+    brief = CompanyBrief(domain="x.test", pages=[{"role": "home", "words": 900, "url": "u"}])
+    brief.fleet = carrier
+    flags = build_risk_flags(brief, date.today())
+
+    assert any(f.key == "carrier_inactive" and f.severity == "high" for f in flags)
+
+
+def _brief_with_fleet() -> CompanyBrief:
+    carrier = fmcsa.parse_snapshot(SNAPSHOT)
+    carrier.power_units = 42
+    carrier.drivers = 39
+    carrier.match_score = 0.91
+    carrier.match_basis = "name similarity 0.95; state matches (AZ)"
+    carrier.considered = 3
+    carrier.evidence = fmcsa.build_evidence(carrier)
+    brief = CompanyBrief(domain="hauler.test", name="Hauler", headline="h", narrative="n")
+    brief.fleet = carrier
+    return brief
+
+
+def test_every_renderer_shows_the_fleet_record():
+    """The HTML brief used to drop this section entirely — silently."""
+    from dealscope.render import to_html, to_markdown, to_text
+
+    brief = _brief_with_fleet()
+    for name, output in (
+        ("markdown", to_markdown(brief)),
+        ("html", to_html(brief)),
+        ("text", to_text(brief)),
+    ):
+        assert "1597181" in output, f"{name} lost the USDOT number"
+        assert "42" in output, f"{name} lost the power-unit count"
+
+
+def test_every_renderer_explains_a_refused_match():
+    """A refused match must not look identical to no lookup at all."""
+    from dealscope.render import to_html, to_markdown, to_text
+
+    brief = CompanyBrief(domain="x.test", name="X", headline="h", narrative="n")
+    brief.fleet_note = "several FMCSA records match about equally well"
+
+    for name, output in (
+        ("markdown", to_markdown(brief)),
+        ("html", to_html(brief)),
+        ("text", to_text(brief)),
+    ):
+        assert "equally well" in output, f"{name} hid the reason no record was attached"

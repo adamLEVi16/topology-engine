@@ -346,6 +346,12 @@ def extract(
             model.sales_motion = "self-serve"
         else:
             model.sales_motion = "sales-led"
+        # A consultancy cannot be bought without talking to anyone. "Get
+        # started" on an agency site opens a conversation, not a checkout, so
+        # without published prices the motion is sales-led whatever the CTAs say.
+        if model.primary in ("services", "local_services") and not model.price_points:
+            model.sales_motion = "sales-led"
+
         example = (SELF_SERVE.search(corpus) if self_serve >= sales_led else SALES_LED.search(corpus))
         evidence.append(
             Evidence(

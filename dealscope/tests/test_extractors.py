@@ -259,3 +259,106 @@ def test_content_reads_cadence_and_copyright(saas_pages):
     assert data["posts_per_month"] and data["posts_per_month"] > 0
     assert data["copyright_year"] == date.today().year
     assert any("bootstrapped" in note.lower() for note in data["ownership_notes"])
+
+
+# --- regressions found in code review ---
+
+
+def test_headcount_is_not_taken_from_the_middle_of_a_number():
+    """"33,776 people" used to yield a headcount of 776."""
+    from dealscope.extract.people import HEADCOUNT
+
+    assert HEADCOUNT.search("We answered emails from 33,776 people last year.") is None
+    assert HEADCOUNT.search("We are a team of 18.") is not None
+
+
+def test_a_customer_count_is_not_read_as_staff():
+    from dealscope.extract.people import HEADCOUNT
+
+    assert HEADCOUNT.search("Serving 4,500 people in Dayton every week.") is None
+
+
+def test_nav_links_are_not_counted_as_job_postings():
+    """A careers page saying "no openings" must not report roles from its nav."""
+    from .conftest import make_page
+
+    page = make_page(
+        "https://a.test/careers", "careers",
+        "<body><nav><a href='/careers'>Careers</a><a href='/jobs'>Open Jobs</a></nav>"
+        "<h1>Careers</h1><p>We have no open positions right now.</p></body>",
+    )
+    data, _ = hiring.extract([page])
+    assert data["open_roles"] == 0
+    assert data["role_titles"] == []
+
+
+def test_real_postings_are_still_counted_alongside_a_nav():
+    from .conftest import make_page
+
+    page = make_page(
+        "https://a.test/careers", "careers",
+        "<body><nav><a href='/careers'>Careers</a></nav><h1>Open roles</h1>"
+        "<a href='/careers/senior-backend-engineer'>Senior Backend Engineer</a>"
+        "<a href='/careers/account-executive'>Account Executive</a></body>",
+    )
+    data, _ = hiring.extract([page])
+    assert data["open_roles"] == 2
+    assert "Careers" not in data["role_titles"]
+
+
+def test_funding_mentions_come_only_from_the_companys_own_pages():
+    """A publication's blog is full of other companies' funding rounds."""
+    from .conftest import make_page
+
+    home = make_page("https://pub.test/", "home", "<body><h1>Pub</h1></body>")
+    blog = make_page(
+        "https://pub.test/blog", "blog",
+        "<body><p>Alphabet is raising $80 billion through a package of equity "
+        "offerings, and the startup closed a Series B led by Acme Ventures.</p></body>",
+    )
+    data, _ = content.extract([home, blog], 365)
+    assert data["funding_mentions"] == []
+
+
+def test_a_consultancy_is_never_described_as_self_serve():
+    """You cannot buy an agency without talking to anyone."""
+    from .conftest import make_page
+
+    page = make_page(
+        "https://agency.test/", "home",
+        "<body><h1>Consulting</h1><p>Get started today. Sign up for our newsletter. "
+        "Our clients include global banks. Our approach is bespoke and tailored to your "
+        "engagement. Case studies show our process. Request a proposal.</p></body>",
+    )
+    model, _ = commerce.extract([page])
+    assert model.primary == "services"
+    assert model.sales_motion != "self-serve"
+
+
+def test_leadership_is_ordered_by_seniority_not_alphabetically():
+    """The CEO used to be cut from the summary by two colleagues named A and B."""
+    from .conftest import make_page
+
+    page = make_page(
+        "https://a.test/team", "team",
+        "<body><ul>"
+        "<li><h3>Anna Miragliuolo</h3><p>Chief People Officer</p></li>"
+        "<li><h3>Becky Dunbar</h3><p>Chief Financial Officer</p></li>"
+        "<li><h3>Chad Pytel</h3><p>Developer and CEO</p></li>"
+        "</ul></body>",
+    )
+    data, _ = people.extract([page], 12, 15)
+    assert data["leadership"][0]["name"] == "Chad Pytel"
+
+
+def test_placeholder_alt_text_is_not_a_customer():
+    from .conftest import make_page
+
+    page = make_page(
+        "https://a.test/customers", "customers",
+        "<body><h2>Customers</h2><img src='1.svg' alt='Client'>"
+        "<img src='2.svg' alt='Real Chemistry'><img src='3.svg' alt='Postmates'></body>",
+    )
+    data, _ = people.extract([page], 12, 15)
+    assert "Client" not in data["named_customers"]
+    assert "Real Chemistry" in data["named_customers"]

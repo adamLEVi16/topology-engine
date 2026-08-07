@@ -419,7 +419,7 @@ def build_risk_flags(
 
     # A trade business quotes every job, so absent prices are the norm rather
     # than a finding. Raising it as a flag would be noise dressed as insight.
-    if not model.price_points and model.primary != "local_services":
+    if not model.price_points and model.primary not in ("local_services", "services"):
         flags.append(RiskFlag(
             "no_public_pricing", "Pricing is not published", "medium",
             "Without public prices, revenue cannot be sanity-checked from the "
@@ -512,14 +512,27 @@ STRUCTURAL_UNKNOWNS = [
 
 def build_unknowns(brief: CompanyBrief) -> list[str]:
     unknowns = list(STRUCTURAL_UNKNOWNS)
+    # Which pages were actually read. Saying "no careers page was found" while
+    # the brief lists one under "Pages read" is the kind of contradiction that
+    # makes a reader distrust everything else.
+    roles_read = {p.get("role") for p in brief.pages if not p.get("error")}
+
     if not brief.business_model.price_points:
         unknowns.append("Pricing — nothing public was found")
     if not brief.scale.named_people:
         unknowns.append("Who owns and runs the business")
     if brief.momentum.open_roles is None:
-        unknowns.append("Hiring activity — no careers page was found")
+        unknowns.append(
+            "Hiring activity — the careers page listed nothing countable"
+            if "careers" in roles_read
+            else "Hiring activity — no careers page was found"
+        )
     if brief.momentum.last_content_date is None:
-        unknowns.append("Publishing cadence — no dated content was found")
+        unknowns.append(
+            "Publishing cadence — the blog carried no readable dates"
+            if "blog" in roles_read
+            else "Publishing cadence — no dated content was found"
+        )
     if not brief.scale.named_customers and not brief.scale.customer_count_claim:
         unknowns.append("Customer base — no customers or counts are named publicly")
     if brief.business_model.primary == "unknown":

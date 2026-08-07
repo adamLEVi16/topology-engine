@@ -29,6 +29,8 @@ from .render.html import render_index, render_working, to_html
 log = logging.getLogger("dealscope.web")
 
 MAX_JOBS = 40
+# Ceiling on queued work, so a reloaded page cannot pile up traffic.
+MAX_QUEUED_JOBS = 4
 
 # One analysis at a time. Each run makes real requests to somebody's website,
 # and a shared lock keeps an impatient reload from doubling that traffic.
@@ -65,9 +67,27 @@ class JobStore:
         with self._lock:
             self._jobs[job.id] = job
             self._order.append(job.id)
+            # Evict finished jobs only. Dropping a running one left the reader
+            # looking at "that job has expired" while its worker carried on
+            # fetching a third-party site with no way to see or stop it.
             while len(self._order) > self.limit:
-                self._jobs.pop(self._order.pop(0), None)
+                evictable = next(
+                    (
+                        job_id
+                        for job_id in self._order
+                        if self._jobs.get(job_id) and self._jobs[job_id].status != "running"
+                    ),
+                    None,
+                )
+                if evictable is None:
+                    break
+                self._order.remove(evictable)
+                self._jobs.pop(evictable, None)
         return job
+
+    def running(self) -> int:
+        with self._lock:
+            return sum(1 for job in self._jobs.values() if job.status == "running")
 
     def get(self, job_id: str) -> Job | None:
         with self._lock:
@@ -89,14 +109,16 @@ def _run_job(job: Job, config: Config) -> None:
                 job.progress = message
 
             job.brief = analyze(job.domain, config, progress=progress)
-            job.status = "done"
+            job.status = "done"          # after the brief, for the same reason
     except ValueError as exc:
-        job.status = "error"
+        # Set the reason before the status: a poll landing between the two
+        # would otherwise render "Could not read that: " with nothing after it.
         job.error = str(exc)
+        job.status = "error"
     except Exception as exc:  # never let a worker thread take down the server
         log.exception("analysis failed for %s", job.domain)
-        job.status = "error"
         job.error = f"{type(exc).__name__}: {exc}"
+        job.status = "error"
 
 
 class BriefHandler(BaseHTTPRequestHandler):
@@ -167,6 +189,18 @@ class BriefHandler(BaseHTTPRequestHandler):
 
         if not domain:
             self._send(render_index(fresh=fresh))
+            return
+
+        # One analysis runs at a time; without a ceiling, refreshing the page
+        # queues unbounded threads and unbounded traffic at somebody's site.
+        if _jobs.running() >= MAX_QUEUED_JOBS:
+            self._send(
+                render_index(
+                    error="Too many analyses are already queued. Wait for one to finish.",
+                    domain=domain,
+                ),
+                status=429,
+            )
             return
 
         config = Config(**{**vars(self.config), "use_cache": self.config.use_cache and not fresh})

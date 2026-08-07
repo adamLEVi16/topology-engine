@@ -116,11 +116,18 @@ def build_deterministic(brief: CompanyBrief, today: date) -> str:
     paragraphs.append(opening)
 
     # --- how it makes money ---
+    # One decision, not two. Independent branches here are what produced
+    # "no pricing was found" immediately followed by a list of prices.
     if model.primary != "unknown":
         money = f"Revenue appears to come from {MODEL_PHRASES[model.primary]}"
         if model.confidence:
             money += f" (confidence {int(model.confidence * 100)}% on public signals)"
         money += "."
+    elif model.price_points:
+        money = (
+            "The site publishes prices, but not enough about what is sold or how it "
+            "is delivered to establish the revenue model."
+        )
     else:
         money = (
             "How the business charges could not be established from the public site — "
@@ -137,7 +144,7 @@ def build_deterministic(brief: CompanyBrief, today: date) -> str:
             "sales-led": (
                 "the site is built around getting people to call or request a quote"
                 if local
-                else "the calls to action route to a demo or a sales conversation"
+                else "buying starts with a demo or a sales conversation"
             ),
             "hybrid": "there is both a self-serve path and a sales-led one",
         }.get(model.sales_motion, "")

@@ -38,6 +38,12 @@ class Config:
     respect_robots: bool = True
     verify_tls: bool = True
 
+    # Private and loopback addresses are refused by default, which is what
+    # stops the web UI being an open proxy into its own network. A user running
+    # the CLI against their own intranet is a different situation, so it is a
+    # deliberate opt-in — never enabled for the server.
+    allow_private_hosts: bool = False
+
     # Politeness ceilings. robots.txt may ask for a long crawl delay; we honour
     # it up to these bounds rather than either ignoring it or stalling forever.
     max_crawl_delay: float = 15.0

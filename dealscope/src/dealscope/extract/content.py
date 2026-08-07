@@ -12,7 +12,7 @@ from datetime import date, datetime, timezone
 from typing import Any
 
 from ..fetch import make_soup
-from ..models import ROLE_BLOG, ROLE_HOME, Evidence, Page
+from ..models import ROLE_ABOUT, ROLE_BLOG, ROLE_HOME, Evidence, Page
 from . import structured as st
 
 MONTHS = {
@@ -181,30 +181,42 @@ def extract(
         evidence.append(Evidence("momentum.copyright_year", str(year), url, "regex", 0.7))
 
     # --- funding / ownership ---
-    corpus = st.joined_text(all_ok, 120_000)
+    # Read only pages where a company talks about itself. A publication's blog
+    # is full of other companies' funding rounds, and reading those as its own
+    # produced "the site mentions backed by state actors".
+    own_voice = st.pages_by_role(pages, ROLE_HOME, ROLE_ABOUT)
     seen: set[str] = set()
-    for match in FUNDING.finditer(corpus):
-        phrase = " ".join(match.group(0).split())[:120]
-        key = phrase.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        source = next((p.final_url for p in all_ok if phrase[:40] in p.text), home_url)
-        data["funding_mentions"].append(phrase)
-        evidence.append(
-            Evidence("momentum.funding", phrase, source, "regex", 0.45,
-                     snippet="mentioned on the site; not verified against a filing")
-        )
+    for page in own_voice:
         if len(data["funding_mentions"]) >= 5:
             break
-
-    for match in BOOTSTRAPPED.finditer(corpus):
-        phrase = " ".join(match.group(0).split())
-        if phrase.lower() not in {n.lower() for n in data["ownership_notes"]}:
-            data["ownership_notes"].append(phrase)
+        for match in FUNDING.finditer(page.text):
+            phrase = " ".join(match.group(0).split())[:120]
+            key = phrase.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            data["funding_mentions"].append(phrase)
             evidence.append(
-                Evidence("momentum.ownership", phrase, home_url, "regex", 0.5)
+                Evidence(
+                    "momentum.funding",
+                    phrase,
+                    page.final_url,  # the page it was actually found on
+                    "regex",
+                    0.45,
+                    snippet="mentioned on the site; not verified against a filing",
+                )
             )
+            if len(data["funding_mentions"]) >= 5:
+                break
+
+    for page in own_voice:
+        for match in BOOTSTRAPPED.finditer(page.text):
+            phrase = " ".join(match.group(0).split())
+            if phrase.lower() not in {n.lower() for n in data["ownership_notes"]}:
+                data["ownership_notes"].append(phrase)
+                evidence.append(
+                    Evidence("momentum.ownership", phrase, page.final_url, "regex", 0.5)
+                )
         if len(data["ownership_notes"]) >= 3:
             break
 

@@ -172,3 +172,58 @@ def test_prune_enforces_a_size_cap_oldest_first(tmp_path):
 
 def test_prune_is_silent_when_there_is_no_cache(tmp_path):
     assert prune_cache(tmp_path / "missing", ttl=10, max_bytes=10) == 0
+
+
+# --- SSRF and cache containment (found in code review) ---
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://localhost/",
+        "http://127.0.0.1:8080/admin",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://10.0.0.5/",
+        "http://192.168.1.1/",
+        "http://[::1]/",
+    ],
+)
+def test_internal_addresses_are_refused(url):
+    """The web UI analyses any domain a visitor types; it must not be a proxy."""
+    fetcher = _fetcher(use_cache=False)
+    try:
+        page = fetcher.get(url)
+        assert not page.ok
+        assert page.error
+    finally:
+        fetcher.close()
+
+
+def test_private_hosts_can_be_allowed_deliberately():
+    """A user pointing the CLI at their own intranet is a different case."""
+    from dealscope.fetch import check_public_host, BlockedHost
+
+    with pytest.raises(BlockedHost):
+        check_public_host("127.0.0.1")
+
+    fetcher = _fetcher(use_cache=False, allow_private_hosts=True)
+    try:
+        assert fetcher.config.allow_private_hosts is True
+    finally:
+        fetcher.close()
+
+
+def test_a_public_host_passes_the_check():
+    from dealscope.fetch import check_public_host
+
+    check_public_host("example.com")   # must not raise
+
+
+def test_cache_path_stays_inside_the_cache_directory(tmp_path):
+    fetcher = _fetcher(use_cache=False, cache_dir=tmp_path)
+    try:
+        for host in ("https://../x", "https://..%2f../y", "https://ok.test/z"):
+            path = fetcher._cache_path(host).resolve()
+            assert tmp_path.resolve() in path.parents, f"{host} escaped to {path}"
+    finally:
+        fetcher.close()

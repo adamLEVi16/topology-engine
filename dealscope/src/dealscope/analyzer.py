@@ -49,10 +49,59 @@ def analyze(
 ) -> CompanyBrief:
     """Read a company's public website and build a buyer-oriented brief.
 
-    Never raises for network or parsing problems: an unreachable site comes
-    back as a brief whose coverage score is zero and whose risk flags say so.
+    Raises ``ValueError`` only for a domain that cannot be parsed. Every other
+    failure — network, parsing, disk, an extractor tripping over unusual
+    markup — comes back as a brief that says what went wrong, because a reader
+    who asked for a brief should never receive a traceback.
     """
     config = config or Config()
+    host = normalize_domain(domain)  # the one error worth refusing outright
+
+    try:
+        return _analyze(domain, config, progress)
+    except Exception as exc:  # noqa: BLE001 - deliberate last line of defence
+        log.exception("analysis of %s failed", host)
+        return _failed_brief(host, f"{type(exc).__name__}: {exc}")
+
+
+def _failed_brief(host: str, reason: str) -> CompanyBrief:
+    """A brief describing its own failure, rather than a crash."""
+    brief = CompanyBrief(
+        domain=host,
+        name=host,
+        canonical_url=f"https://{host}/",
+        generated_at=datetime.now(timezone.utc),
+        version=__version__,
+        headline=f"{host} — analysis failed",
+    )
+    brief.fetch_notes = [reason]
+    brief.risk_flags = [
+        RiskFlag(
+            "analysis_failed",
+            "This brief could not be completed",
+            "high",
+            f"Analysis stopped with an internal error: {reason}. Nothing below "
+            "has been verified. This is a fault in the tool, not a finding "
+            "about the business.",
+        )
+    ]
+    today = datetime.now(timezone.utc).date()
+    brief.scores = build_scores(brief, today)
+    brief.unknowns = build_unknowns(brief)
+    brief.diligence_questions = build_diligence_questions(brief)
+    brief.narrative = (
+        f"No brief could be produced for {host}: the analysis failed part-way "
+        f"through ({reason}). Everything below is a list of what remains unknown."
+    )
+    return brief
+
+
+def _analyze(
+    domain: str,
+    config: Config,
+    progress: ProgressFn | None = None,
+) -> CompanyBrief:
+    """The pipeline itself. Wrapped by :func:`analyze`, which catches its faults."""
     say = progress or _noop
     host = normalize_domain(domain)
     today = datetime.now(timezone.utc).date()

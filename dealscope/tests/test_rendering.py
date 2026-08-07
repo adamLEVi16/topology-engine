@@ -65,7 +65,8 @@ def browser_available() -> bool:
 
 
 def _config(**overrides) -> Config:
-    base = {"delay": 0, "use_cache": False, "timeout": 20.0}
+    base = {"delay": 0, "use_cache": False, "timeout": 20.0,
+            "allow_private_hosts": True}  # the fixture server is on 127.0.0.1
     base.update(overrides)
     return Config(**base)
 
