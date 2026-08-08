@@ -79,6 +79,8 @@ def build_headline(brief: CompanyBrief, today: date) -> str:
         # description is that everything routes to a phone call or a quote.
         if model.primary == "local_services":
             bits.append("quote-led")
+        elif model.sales_motion == "sales-led":
+            bits.append("sales-led")          # "sales-led sales" read badly
         else:
             bits.append(f"{model.sales_motion} sales")
     if brief.scale.headcount_estimate:

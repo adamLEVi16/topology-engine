@@ -177,7 +177,18 @@ def score_maturity(brief: CompanyBrief, today: date) -> Score:
         points += 4; why.append("publishes opening hours")
 
     value = min(100.0, points)
-    return Score(round(value, 1), _band(value), why)
+    return Score(round(value, 1), _footprint_band(value), why)
+
+
+def _footprint_band(value: float) -> str:
+    """Describe how much the site documents, not how good the business is."""
+    if value < 25:
+        return "sparse"
+    if value < 50:
+        return "partial"
+    if value < 75:
+        return "substantial"
+    return "comprehensive"
 
 
 # Business types that have no reason to publish or to hire in public. Judging

@@ -37,6 +37,13 @@ SOCIAL_PATTERNS: dict[str, str] = {
     "Bluesky": r"bsky\.app/profile/[\w\-.]+",
 }
 
+# Platform-wide URLs that belong to nobody in particular.
+GENERIC_SOCIAL_PATH = re.compile(
+    r"/(sponsors|explore|about|home|login|signup|share|intent|hashtag|search|"
+    r"pricing|features|topics|trending|watch|results|policies|legal|help)(/|$)",
+    re.I,
+)
+
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]{2,}")
 TEL_LINK = re.compile(r"tel:\+?[\d\s().\-]{6,}", re.I)
 PHONE_TEXT = re.compile(
@@ -151,24 +158,48 @@ def extract(pages: list[Page], domain: str) -> tuple[dict[str, Any], list[Eviden
         "opening_hours": "",
     }
 
-    # --- socials (scan every page: they usually live in the footer) ---
+    # --- socials ---
+    # A company's real accounts sit in the footer, so they appear on nearly
+    # every page. A one-off link in a blog post appears once — which is how
+    # github.com/sponsors and a stranger's Instagram got listed as thoughtbot's.
+    # Count how many pages each candidate appears on and keep the commonest.
+    tally: dict[str, dict[str, int]] = {}
+    first_seen: dict[str, str] = {}
+
     for page in all_ok:
         soup = make_soup(page.html)
-        hrefs = [a["href"] for a in soup.find_all("a", href=True)]
+        hrefs = {a["href"] for a in soup.find_all("a", href=True)}
         for network, pattern in SOCIAL_PATTERNS.items():
-            if network in data["socials"]:
-                continue
+            found_here: set[str] = set()
             for href in hrefs:
                 match = re.search(pattern, href, re.I)
-                if match:
-                    url = match.group(0)
-                    if not url.startswith("http"):
-                        url = "https://" + url
-                    data["socials"][network] = url
-                    evidence.append(
-                        Evidence("trust.social", f"{network}: {url}", page.final_url, "link", 0.85)
-                    )
-                    break
+                if not match:
+                    continue
+                url = match.group(0)
+                if GENERIC_SOCIAL_PATH.search(url):
+                    continue  # platform-wide page, not this company's account
+                if not url.startswith("http"):
+                    url = "https://" + url
+                found_here.add(url)
+            for url in found_here:
+                tally.setdefault(network, {})
+                tally[network][url] = tally[network].get(url, 0) + 1
+                first_seen.setdefault(f"{network}|{url}", page.final_url)
+
+    for network, candidates in tally.items():
+        # Most pages wins; ties go to the shorter (less deep) URL.
+        url, pages_seen = max(candidates.items(), key=lambda kv: (kv[1], -len(kv[0])))
+        data["socials"][network] = url
+        evidence.append(
+            Evidence(
+                "trust.social",
+                f"{network}: {url}",
+                first_seen.get(f"{network}|{url}", all_ok[0].final_url),
+                "link",
+                0.85 if pages_seen > 1 else 0.5,
+                snippet=f"linked from {pages_seen} page(s) read",
+            )
+        )
 
     # --- emails ---
     seen_emails: set[str] = set()

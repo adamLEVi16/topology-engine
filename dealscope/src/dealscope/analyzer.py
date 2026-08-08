@@ -186,11 +186,27 @@ def _analyze(
 
             candidate = options[index]
             cursor[role] = index + 1
+
+            # Sites commonly serve one page under two roles — /our-company as
+            # both about and contact. Fetching it twice spends a page of the
+            # budget on nothing and double-counts it in "pages read".
+            if any(p.url == candidate.url or p.final_url == candidate.url for p in pages):
+                return False
+
             say(f"{role}: {candidate.url}")
             page = fetcher.get(candidate.url, role=role)
             budget[0] -= 1
 
             if page.ok:
+                # A redirect can land on a page already read — /contact often
+                # resolves to /our-company. Checking the URL we asked for is
+                # not enough; check where we actually arrived.
+                landed = page.final_url or page.url
+                if any((p.final_url or p.url) == landed for p in pages):
+                    fetcher.notes.append(
+                        f"{candidate.url} resolves to {landed}, already read as another role"
+                    )
+                    return False
                 pages.append(page)
                 accepted[role] += 1
                 return True

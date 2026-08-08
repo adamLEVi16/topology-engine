@@ -248,8 +248,11 @@ class ScoreCard:
     evidence_coverage: Score
 
     def as_pairs(self) -> list[tuple[str, Score]]:
+        # "Maturity" invited readers to hear a verdict on the company; a
+        # twenty-year-old firm with a sparse site scored "emerging". The
+        # measure has always been how much the site documents, so it says so.
         return [
-            ("Maturity", self.maturity),
+            ("Public footprint", self.maturity),
             ("Momentum", self.momentum),
             ("Transparency", self.transparency),
             ("Evidence coverage", self.evidence_coverage),

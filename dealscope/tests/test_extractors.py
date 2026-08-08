@@ -362,3 +362,34 @@ def test_placeholder_alt_text_is_not_a_customer():
     data, _ = people.extract([page], 12, 15)
     assert "Client" not in data["named_customers"]
     assert "Real Chemistry" in data["named_customers"]
+
+
+def test_platform_wide_social_urls_are_rejected():
+    """github.com/sponsors belongs to GitHub, not to the company."""
+    from .conftest import make_page
+
+    page = make_page(
+        "https://a.test/", "home",
+        "<body><a href='https://github.com/sponsors'>Sponsor us</a>"
+        "<a href='https://linkedin.com/company/acme-inc'>LinkedIn</a></body>",
+    )
+    data, _ = contact.extract([page], "a.test")
+    assert "GitHub" not in data["socials"]
+    assert data["socials"].get("LinkedIn", "").endswith("acme-inc")
+
+
+def test_a_footer_social_link_beats_a_one_off_mention():
+    """A real account is in the footer of every page; a stray link appears once."""
+    from .conftest import make_page
+
+    footer = "<a href='https://instagram.com/acmeco'>Instagram</a>"
+    pages = [
+        make_page("https://a.test/", "home", f"<body>{footer}</body>"),
+        make_page("https://a.test/about", "about", f"<body>{footer}</body>"),
+        make_page(
+            "https://a.test/blog", "blog",
+            f"<body><a href='https://instagram.com/some_designer'>a designer</a>{footer}</body>",
+        ),
+    ]
+    data, _ = contact.extract(pages, "a.test")
+    assert data["socials"]["Instagram"].endswith("acmeco")
