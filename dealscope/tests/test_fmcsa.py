@@ -326,3 +326,37 @@ def test_every_renderer_explains_a_refused_match():
         ("text", to_text(brief)),
     ):
         assert "equally well" in output, f"{name} hid the reason no record was attached"
+
+
+# --- second review: the fix's own blind spots ---
+
+
+@pytest.mark.parametrize(
+    "brand,legal",
+    [
+        ("Retty", "RETTY LOGISTICS LLC"),
+        ("Kettlewind", "KETTLEWIND TRANSPORT INC"),
+        ("Bolt", "BOLT EXPRESS LLC"),
+    ],
+)
+def test_a_single_word_brand_still_matches_its_legal_entity(brand, legal):
+    """The normal case: brief.name is the brand, SAFER holds the entity."""
+    assert fmcsa.name_similarity(brand, legal) >= fmcsa.MIN_NAME_SIMILARITY
+
+
+@pytest.mark.parametrize(
+    "a,b",
+    [
+        ("A-1 Trucking", "TRUCKING LLC"),
+        ("The Moving Company", "MOVING LLC"),
+        ("J & R Hauling", "HAULING INC"),
+    ],
+)
+def test_a_name_that_reduces_to_one_industry_word_matches_nothing(a, b):
+    """Both sides collapse to "trucking"; that identifies nobody."""
+    assert fmcsa.name_similarity(a, b) == 0.0
+
+
+def test_a_short_shared_word_is_still_not_enough():
+    """"Dot" inside "Alpha Dot" must stay below the floor."""
+    assert fmcsa.name_similarity("DOT INC", "ALPHA DOT INC") < fmcsa.MIN_NAME_SIMILARITY

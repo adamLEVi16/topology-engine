@@ -25,7 +25,7 @@ from . import structured as st
 
 SOCIAL_PATTERNS: dict[str, str] = {
     "LinkedIn": r"linkedin\.com/(company|in|school)/[\w\-%.]+",
-    "X / Twitter": r"(twitter|x)\.com/[\w]{2,20}",
+    "X / Twitter": r"(?<![\w.])(?:twitter|x)\.com/[\w]{2,20}",
     "Facebook": r"facebook\.com/[\w\-.]{2,50}",
     "Instagram": r"instagram\.com/[\w\-.]{2,40}",
     "YouTube": r"youtube\.com/(@[\w\-.]+|c/[\w\-.]+|channel/[\w\-]+|user/[\w\-.]+)",
@@ -58,9 +58,14 @@ US_ADDRESS = re.compile(
 
 # What a local trade business publishes instead of SOC 2: where it works, when
 # it is open, and whether it is licensed. These are its real credibility signals.
+# Local businesses write these as headings — "Service Area:", "Areas We Serve"
+# — which are title case, so the trigger must be case-insensitive. The area
+# itself stays case-sensitive: it has to look like a place name.
 SERVICE_AREA = re.compile(
-    r"\b(?:serving|proudly serving|service(?:s)? (?:area|areas)|areas we serve|"
-    r"we serve|serving the)\s*:?\s*(?P<area>[A-Z][\w.'\-]*(?:[ ,&/]+(?:and\s+)?[A-Z][\w.'\-]*){0,8})",
+    r"\b(?:proudly serving|serving the|serving|service areas?|areas we serve|"
+    r"we serve|areas served)\b\s*:?\s*"
+    r"(?P<area>[A-Z][\w.'\-]*(?:[ ,&/]+(?:and\s+)?[A-Z][\w.'\-]*){0,8})",
+    re.I,
 )
 HOURS = re.compile(
     r"\b(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?\s*[-–—to]{1,3}\s*"

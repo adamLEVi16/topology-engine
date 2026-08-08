@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+import pytest
+
 from dealscope.extract import commerce, contact, content, hiring, identity, people, structured
 
 
@@ -393,3 +395,77 @@ def test_a_footer_social_link_beats_a_one_off_mention():
     ]
     data, _ = contact.extract(pages, "a.test")
     assert data["socials"]["Instagram"].endswith("acmeco")
+
+
+# --- second review: mirror assertions beside each fix ---
+
+
+def test_headcount_reads_thousands_separators_whole():
+    """The first fix turned "a team of 1,200" into a headcount of 1."""
+    from dealscope.extract.people import HEADCOUNT
+
+    match = HEADCOUNT.search("We are a team of 1,200 people.")
+    assert match and "1,200" in match.group(0)
+
+
+def test_a_sentence_comma_after_the_number_still_matches():
+    """"a team of 18, based in Bristol" — the comma is punctuation, not a group."""
+    from dealscope.extract.people import HEADCOUNT
+
+    match = HEADCOUNT.search("Today we are a team of 18, based in Bristol.")
+    assert match and "18" in match.group(0)
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [("€29,99", 29.99), ("29,99 €", 29.99), ("49 EUR", 49.0),
+     ("$1,200", 1200.0), ("29.99 USD", 29.99)],
+)
+def test_prices_are_read_under_both_separator_conventions(text, expected):
+    """"€29,99" was reported as €29 — a wrong price, stated as published."""
+    from dealscope.extract.commerce import PRICE, parse_amount
+
+    match = PRICE.search(text)
+    assert match, f"no price found in {text!r}"
+    assert parse_amount(match.group("amt") or match.group("amt2")) == expected
+
+
+def test_a_utf8_page_that_declares_encoding_only_in_markup_is_readable():
+    """Latin-1 decoding mangled every accented name and broke the euro sign."""
+    from dealscope.fetch import decode_html
+
+    raw = "<html><head><meta charset='utf-8'></head><body>Café — 49 €</body></html>".encode()
+    decoded = decode_html(raw, "text/html", "ISO-8859-1")   # header omits charset
+    assert "Café" in decoded and "€" in decoded
+
+
+def test_service_area_headings_are_matched():
+    """Local sites write these as title-case headings."""
+    from dealscope.extract.contact import SERVICE_AREA
+
+    for text in ("Proudly Serving Dayton and Springfield",
+                 "Service Area: Dayton, Springfield",
+                 "Areas We Serve: Dayton"):
+        assert SERVICE_AREA.search(text), text
+
+
+def test_a_hostname_merely_ending_in_x_com_is_not_a_profile():
+    from dealscope.extract.contact import SOCIAL_PATTERNS
+    import re as _re
+
+    pattern = SOCIAL_PATTERNS["X / Twitter"]
+    assert _re.search(pattern, "https://www.netflix.com/title/80100172") is None
+    assert _re.search(pattern, "https://x.com/thoughtbot")
+
+
+def test_a_section_index_link_does_not_overrule_no_openings():
+    from .conftest import make_page
+
+    page = make_page(
+        "https://a.test/careers", "careers",
+        "<body><nav><a href='/careers'>Careers</a><a href='/jobs'>Open Jobs</a>"
+        "<a href='/careers/engineering'>Engineering</a></nav>"
+        "<p>We have no open positions right now.</p></body>",
+    )
+    data, _ = hiring.extract([page])
+    assert data["open_roles"] == 0

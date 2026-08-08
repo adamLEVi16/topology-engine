@@ -150,6 +150,39 @@ def html_to_text(html: str) -> str:
     return "\n".join(line for line in lines if line)
 
 
+_META_CHARSET = re.compile(
+    rb"""<meta[^>]+charset\s*=\s*["']?\s*([\w.:-]+)""", re.I
+)
+
+
+def decode_html(raw: bytes, content_type: str, header_encoding: str | None) -> str:
+    """Decode a page, preferring what the document declares about itself.
+
+    ``requests`` reports ISO-8859-1 for ``text/html`` with no charset parameter,
+    per the old HTTP spec, so a UTF-8 page that declares its encoding only in
+    markup came out as mojibake — every accented name mangled, and the euro
+    sign broken badly enough that prices stopped matching and the brief
+    reported "pricing not published". An invented absence is the worst kind.
+    """
+    if raw.startswith(b"\xef\xbb\xbf"):
+        return raw.decode("utf-8-sig", errors="replace")
+
+    encoding = header_encoding if "charset=" in (content_type or "").lower() else None
+    if not encoding:
+        declared = _META_CHARSET.search(raw[:4096])
+        if declared:
+            encoding = declared.group(1).decode("ascii", errors="ignore")
+    if not encoding:
+        # Nothing said anything. UTF-8 is the safe modern default, and its
+        # decoder rejects most Latin-1 text rather than mangling it silently.
+        encoding = "utf-8"
+
+    try:
+        return raw.decode(encoding, errors="replace")
+    except LookupError:
+        return raw.decode("utf-8", errors="replace")
+
+
 def page_title(html: str) -> str:
     soup = make_soup(html)
     if soup.title and soup.title.string:
@@ -206,6 +239,14 @@ class Fetcher:
             if gap > 0:
                 time.sleep(gap)
         self._last_hit[host] = time.monotonic()
+
+    def _guard_host(self, url: str) -> None:
+        """Raise :class:`BlockedHost` unless this URL may be fetched."""
+        if self.config.allow_private_hosts:
+            return
+        # Note: resolution here is independent of the socket the connection
+        # later uses, so DNS rebinding is not defeated by this check alone.
+        check_public_host(urlparse(url).hostname or "")
 
     def delay_for(self, url: str) -> float:
         """Seconds to wait between requests to this host.
@@ -294,7 +335,9 @@ class Fetcher:
     # -- caching --
 
     def _cache_path(self, url: str) -> Path:
-        digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:24]
+        # A permissive CLI run must not seed the cache for a later serve().
+        scope = "private|" if self.config.allow_private_hosts else ""
+        digest = hashlib.sha256((scope + url).encode("utf-8")).hexdigest()[:24]
         # Strip path separators and dot-runs: a host of ".." would otherwise
         # write outside the directory prune_cache manages.
         host = re.sub(r"[^a-z0-9.-]+", "_", (urlparse(url).hostname or "unknown").lower())
@@ -373,18 +416,20 @@ class Fetcher:
             cached.role = role
             return cached
 
+        # Before allowed(), which fetches robots.txt from the same host — a
+        # blocked address was still receiving that one unchecked request.
+        try:
+            self._guard_host(url)
+        except BlockedHost as exc:
+            self.notes.append(str(exc))
+            return Page(url=url, role=role, error=str(exc))
+
         if not self.allowed(url):
             self.notes.append(f"robots.txt disallows {url}")
             self.robots_blocked.append(url)
             return Page(url=url, role=role, error="disallowed by robots.txt")
 
         host = urlparse(url).netloc
-        try:
-            if not self.config.allow_private_hosts:
-                check_public_host(urlparse(url).hostname or "")
-        except BlockedHost as exc:
-            self.notes.append(str(exc))
-            return Page(url=url, role=role, error=str(exc))
 
         delay = self.delay_for(url)
         last_error = "unknown error"
@@ -429,8 +474,7 @@ class Fetcher:
                 resp.close()
 
                 raw = b"".join(chunks)
-                encoding = resp.encoding or resp.apparent_encoding or "utf-8"
-                html = raw.decode(encoding, errors="replace")
+                html = decode_html(raw, ctype, resp.encoding)
 
                 page = Page(
                     url=url,
@@ -446,8 +490,7 @@ class Fetcher:
                     return page
 
                 try:
-                    if not self.config.allow_private_hosts:
-                        check_public_host(urlparse(page.final_url).hostname or "")
+                    self._guard_host(page.final_url)
                 except BlockedHost as exc:
                     self.notes.append(f"redirected into a blocked address: {exc}")
                     return Page(url=url, role=role, error=str(exc))
@@ -456,6 +499,8 @@ class Fetcher:
                 page.title = page_title(html)
 
                 if force_render or self._looks_thin(page):
+                    # Called even when no renderer exists, so the brief records
+                    # that a thin page went unread rather than staying silent.
                     self._render_into(page, force=force_render)
 
                 self._write_cache(cache_key, page)
@@ -489,8 +534,6 @@ class Fetcher:
 
     def _looks_thin(self, page: Page) -> bool:
         """Does this page look like a shell whose content arrives via JavaScript?"""
-        if self.renderer is None or not self.renderer.possible:
-            return False
         words = len(page.text.split())
         # Count parsed anchors, not occurrences of "<a " in the source: a shell
         # page often carries its whole nav as a string inside a <script>, which
@@ -532,6 +575,12 @@ class Fetcher:
         url = clean_url(url)
         if not url:
             return Page(url=url, role=role, error="unsupported URL scheme")
+
+        try:
+            self._guard_host(url)
+        except BlockedHost as exc:
+            self.notes.append(str(exc))
+            return Page(url=url, role=role, error=str(exc))
 
         cache_key = url + "|POST|" + urlencode(sorted(data.items()))
         cached = self._read_cache(cache_key)
@@ -576,7 +625,16 @@ class Fetcher:
         return page
 
     def get_text(self, url: str) -> str:
-        """Fetch a non-HTML resource (sitemaps) as text; empty string on failure."""
+        """Fetch a non-HTML resource (sitemaps) as text; empty string on failure.
+
+        Sitemap roots come from the target's own robots.txt, so a site can name
+        any address it likes here. The host is checked like any other.
+        """
+        try:
+            self._guard_host(url)
+        except BlockedHost as exc:
+            self.notes.append(str(exc))
+            return ""
         try:
             self._wait(urlparse(url).netloc)
             self.fetch_count += 1

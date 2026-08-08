@@ -157,7 +157,10 @@ def links_from(page: Page, domain: str) -> list[tuple[str, str]]:
 
 def _sitemap_candidates(fetcher: Fetcher, home_url: str, domain: str, limit: int = 600) -> list[str]:
     """URLs listed in the site's sitemap(s), following one level of index."""
-    roots = fetcher.sitemap_urls(home_url) or [
+    # robots.txt can name any sitemap URL at all, including an internal
+    # address. Only the site's own sitemaps are followed.
+    declared = [u for u in fetcher.sitemap_urls(home_url) if same_site(u, domain)]
+    roots = declared or [
         f"{urlparse(home_url).scheme}://{urlparse(home_url).netloc}/sitemap.xml"
     ]
     found: list[str] = []

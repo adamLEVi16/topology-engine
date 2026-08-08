@@ -112,22 +112,46 @@ def normalize_name(value: str) -> str:
     return " ".join(tokens)
 
 
+# Words that describe an industry rather than identify a company. A name that
+# reduces to one of these alone ("A-1 Trucking" -> "trucking") would otherwise
+# score 1.0 against every carrier that does the same.
+GENERIC_TOKENS = {
+    "trucking", "transport", "transportation", "logistics", "hauling", "moving",
+    "movers", "freight", "express", "carrier", "carriers", "delivery", "courier",
+    "services", "service", "solutions", "systems", "industries", "contracting",
+    "construction", "plumbing", "heating", "cooling", "landscaping", "roofing",
+    "electric", "electrical", "cleaning", "maintenance", "repair",
+}
+
+
 def name_similarity(a: str, b: str) -> float:
     left, right = normalize_name(a), normalize_name(b)
     if not left or not right:
         return 0.0
+
+    left_tokens, right_tokens = set(left.split()), set(right.split())
+
+    # Checked before the equality short-circuit: two companies both reducing to
+    # "trucking" are not the same company, they are both hauliers.
+    if (len(left_tokens) == 1 and left_tokens <= GENERIC_TOKENS) or (
+        len(right_tokens) == 1 and right_tokens <= GENERIC_TOKENS
+    ):
+        return 0.0
+
     if left == right:
         return 1.0
-    left_tokens, right_tokens = set(left.split()), set(right.split())
+
     shared = left_tokens & right_tokens
     union = left_tokens | right_tokens
     jaccard = len(shared) / len(union) if union else 0.0
 
-    # A genuine shortening — "Retty Logistics" inside "Retty Logistics
-    # Services" — is a strong match. Requiring at least two shared words keeps
-    # a single common word ("Dot" in "Alpha Dot") from qualifying.
+    # A genuine shortening is a strong match. The common case is a brand name
+    # against a legal entity — "Kettlewind" vs "KETTLEWIND TRANSPORT INC" — so
+    # the shorter side is usually one word. Requiring two words made that
+    # unmatchable; requiring a distinctive word instead still excludes short
+    # coincidences like "Dot" inside "Alpha Dot".
     if shared and (left_tokens <= right_tokens or right_tokens <= left_tokens):
-        if min(len(left_tokens), len(right_tokens)) >= 2:
+        if len(min(left, right, key=len)) >= 4:
             return max(0.85, jaccard)
 
     # Character similarity on its own is fooled by shared word endings:

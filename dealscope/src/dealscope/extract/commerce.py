@@ -155,10 +155,34 @@ def _generic_plan_name(line: str) -> bool:
         return False
     return True
 
+# Two shapes, because half the world writes the symbol after the number and
+# uses a comma as the decimal separator. "€29,99" read as €29 before — a wrong
+# price stated as a published one — and "29,99 €" was invisible entirely.
+_AMOUNT = r"\d{1,3}(?:[.,\s]\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?"
+_SYMBOL = r"[$£€¥]|USD|EUR|GBP|CAD|AUD|CHF|SEK|NOK|DKK|PLN"
+
 PRICE = re.compile(
-    r"(?P<sym>[$£€¥]|USD|EUR|GBP|CAD|AUD)\s?(?P<amt>\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)",
+    rf"(?P<sym>{_SYMBOL})\s?(?P<amt>{_AMOUNT})"
+    rf"|(?P<amt2>{_AMOUNT})\s?(?P<sym2>{_SYMBOL})(?![A-Za-z])",
     re.I,
 )
+
+
+def parse_amount(text: str) -> float | None:
+    """Read a price string under either separator convention.
+
+    A trailing group of exactly two digits after ``,`` or ``.`` is a decimal;
+    groups of three are thousands separators.
+    """
+    cleaned = (text or "").replace(" ", "")
+    if not cleaned:
+        return None
+    decimal = re.search(r"[.,](\d{1,2})$", cleaned)
+    if decimal:
+        whole = re.sub(r"[^\d]", "", cleaned[: decimal.start()])
+        return float(f"{whole or 0}.{decimal.group(1)}")
+    digits = re.sub(r"[^\d]", "", cleaned)
+    return float(digits) if digits else None
 PERIOD = re.compile(
     r"\bper\s+(month|year|user|seat|month,? billed \w+|annum)\b|/\s?(mo|month|yr|year|user|seat)\b",
     re.I,
@@ -185,15 +209,13 @@ def _extract_prices(pages: list[Page]) -> tuple[list[str], str, list[Evidence]]:
     for page in pages:
         for line in page.text.splitlines():
             for match in PRICE.finditer(line):
-                raw = match.group("amt").replace(",", "").replace(" ", "")
-                try:
-                    amount = float(raw)
-                except ValueError:
+                amount = parse_amount(match.group("amt") or match.group("amt2") or "")
+                if amount is None:
                     continue
                 # Skip years, phone fragments, and implausible headline numbers.
                 if amount <= 0 or amount > 100_000:
                     continue
-                symbol = match.group("sym")
+                symbol = match.group("sym") or match.group("sym2") or ""
                 code = _SYMBOL_TO_CODE.get(symbol, symbol.upper())
                 symbols[code] += 1
                 display = match.group(0).strip()

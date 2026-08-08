@@ -285,12 +285,19 @@ def build_fact_sheet(brief: CompanyBrief, today: date) -> str:
             "addresses": brief.trust.addresses or "none found",
         },
         "risk_flags": [f"{f.severity}: {f.title} — {f.detail}" for f in brief.risk_flags] or "none",
-        "scores_0_100": (
+        # Sent with assessable and rationale: a bare 60 for a plumber's
+        # momentum invites the model to write "momentum scores 60" about a
+        # measure the code itself declares meaningless.
+        "scores": (
             {
-                "maturity": brief.scores.maturity.value,
-                "momentum": brief.scores.momentum.value,
-                "transparency": brief.scores.transparency.value,
-                "evidence_coverage": brief.scores.evidence_coverage.value,
+                label.lower().replace(" ", "_"): (
+                    {"value": score.value, "band": score.band,
+                     "why": "; ".join(score.rationale)}
+                    if score.assessable
+                    else {"value": "not measurable for this business",
+                          "why": "; ".join(score.rationale)}
+                )
+                for label, score in brief.scores.as_pairs()
             }
             if brief.scores
             else "unknown"

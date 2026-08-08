@@ -113,6 +113,11 @@ def extract(pages: list[Page]) -> tuple[dict[str, Any], list[Evidence]]:
         if count > best_count:
             best_count, best_titles, best_page, best_method = count, titles, page, method
 
+    # A department index in the nav is not a vacancy. When the page says there
+    # are none and the "count" rests on a link or two, believe the sentence.
+    if saw_explicit_none and best_count < 2:
+        best_count = 0
+
     if best_count and best_page:
         data["open_roles"] = best_count
         data["role_titles"] = best_titles[:15]

@@ -87,14 +87,20 @@ def _plausible_name(name: str) -> bool:
     return not any(token in NAME_STOPWORDS for token in tokens)
 
 
-# (?<![\d,.]) stops the digit group starting mid-number: "33,776 people" used
-# to yield 776. The second alternative also needs an ownership word — "serving
-# 4,500 people" is a customer count, not a headcount.
+# The number must be matched whole, at both ends. Guarding only the start let
+# "a team of 1,200" read as a headcount of 1; guarding the end too strictly
+# broke "a team of 18, based in Bristol". So: thousands separators are part of
+# the number, and a trailing comma only disqualifies when digits follow it.
+# The second alternative also needs an ownership phrase — "serving 4,500
+# people" is a customer count, not a headcount.
+_COUNT = r"(?<![\d,.])(\d{1,3}(?:,\d{3})+|\d{1,5})(?!\d|,\d)"
+_APPROX = r"(?:about\s+|around\s+|over\s+|more than\s+|nearly\s+)?"
+
 HEADCOUNT = re.compile(
-    r"\b(?:team of|we(?:'| a)?re a? ?team of|staff of|group of|family of|company of)\s+"
-    r"(?:about\s+|around\s+|over\s+|more than\s+|nearly\s+)?(?<![\d,.])(\d{1,5})\b"
-    r"|\b(?:we (?:have|employ)|employing|with a team of|our team of)\s+"
-    r"(?:about\s+|around\s+|over\s+|more than\s+|nearly\s+)?(?<![\d,.])(\d{1,5})\+?\s+"
+    rf"\b(?:team of|we(?:'| a)?re a? ?team of|staff of|group of|family of|company of)\s+"
+    rf"{_APPROX}{_COUNT}\b"
+    rf"|\b(?:we (?:have|employ)|employing|with a team of|our team of)\s+"
+    rf"{_APPROX}{_COUNT}\+?\s+"
     r"(?:employees|people|staff|team members|professionals|engineers)\b",
     re.I,
 )
@@ -414,7 +420,7 @@ def extract(
     # --- headcount ---
     stated = HEADCOUNT.search(corpus)
     if stated:
-        number = int(stated.group(1) or stated.group(2))
+        number = int((stated.group(1) or stated.group(2)).replace(",", ""))
         if 0 < number < 500_000:
             data["headcount_estimate"] = f"~{number}"
             data["headcount_basis"] = "stated on the site"
