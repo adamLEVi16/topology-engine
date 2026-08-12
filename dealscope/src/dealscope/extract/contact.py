@@ -61,11 +61,13 @@ US_ADDRESS = re.compile(
 # Local businesses write these as headings — "Service Area:", "Areas We Serve"
 # — which are title case, so the trigger must be case-insensitive. The area
 # itself stays case-sensitive: it has to look like a place name.
+# The case-insensitivity is scoped to the trigger group on purpose: a
+# pattern-wide re.I would make [A-Z] below match anything and turn "we serve
+# enterprise teams across finance" into a service area.
 SERVICE_AREA = re.compile(
-    r"\b(?:proudly serving|serving the|serving|service areas?|areas we serve|"
+    r"\b(?i:proudly serving|serving the|serving|service areas?|areas we serve|"
     r"we serve|areas served)\b\s*:?\s*"
-    r"(?P<area>[A-Z][\w.'\-]*(?:[ ,&/]+(?:and\s+)?[A-Z][\w.'\-]*){0,8})",
-    re.I,
+    r"(?P<area>[A-Z][\w.'\-]*(?:[ ,&/]+(?:and\s+)?[A-Z][\w.'\-]*){0,8})"
 )
 HOURS = re.compile(
     r"\b(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?\s*[-–—to]{1,3}\s*"

@@ -448,6 +448,47 @@ def test_service_area_headings_are_matched():
                  "Areas We Serve: Dayton"):
         assert SERVICE_AREA.search(text), text
 
+    # The captured area, not just the trigger: a heading is only useful if the
+    # place name survives it intact.
+    assert (
+        SERVICE_AREA.search("Proudly Serving Dayton and Springfield since 1994")
+        .group("area")
+        == "Dayton and Springfield"
+    )
+
+
+def test_service_area_does_not_swallow_lowercase_marketing_copy():
+    """The trigger is case-insensitive; the place name is not.
+
+    A pattern-wide re.I would let [A-Z] match anything, so a SaaS homepage
+    saying "we serve enterprise teams" would report a service area, add a
+    Service area row to the brief, and earn +8 public-footprint points.
+    """
+    from dealscope.extract.contact import SERVICE_AREA
+
+    for text in (
+        "We serve customers in many industries nationwide.",
+        "Serving our community for 30 years.",
+        "we serve enterprise teams across finance, healthcare and retail.",
+    ):
+        assert SERVICE_AREA.search(text) is None, text
+
+
+def test_state_is_read_from_both_zip_forms():
+    """The state narrows the FMCSA search; ZIP+4 must not hide it."""
+    from dealscope.analyzer import state_from_address
+
+    assert state_from_address("1234 Main St, Columbus, OH 43004") == "OH"
+    assert state_from_address("1234 Main St, Columbus, OH 43004-1234") == "OH"
+    assert state_from_address("1234 Main St, Columbus, OH") == "OH"
+
+
+def test_state_is_empty_when_the_line_does_not_end_in_one():
+    from dealscope.analyzer import state_from_address
+
+    assert state_from_address("1234 Main Street, Suite 400") == ""
+    assert state_from_address("Columbus, Ohio 43004") == ""
+
 
 def test_a_hostname_merely_ending_in_x_com_is_not_a_profile():
     from dealscope.extract.contact import SOCIAL_PATTERNS

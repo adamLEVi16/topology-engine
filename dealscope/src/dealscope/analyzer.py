@@ -42,6 +42,18 @@ def _noop(_message: str) -> None:
     pass
 
 
+# A US address line ends in the state, optionally followed by a ZIP. ZIP+4
+# ("43004-1234") is as common on a contact page as the 5-digit form, and the
+# state it carries is worth +0.15 to a carrier match, so both are read.
+_TRAILING_STATE = re.compile(r"\b([A-Z]{2})\b(?:\s+\d{5}(?:-\d{4})?)?\s*$")
+
+
+def state_from_address(candidate: str) -> str:
+    """The two-letter state at the end of an address line, or ""."""
+    found = _TRAILING_STATE.search(candidate.strip())
+    return found.group(1) if found else ""
+
+
 def analyze(
     domain: str,
     config: Config | None = None,
@@ -360,9 +372,8 @@ def _analyze(
             say("Checking the FMCSA carrier register …")
             state = ""
             for candidate in brief.trust.addresses + brief.scale.locations:
-                found = re.search(r"\b([A-Z]{2})\b(?:\s+\d{5})?\s*$", candidate.strip())
-                if found:
-                    state = found.group(1)
+                state = state_from_address(candidate)
+                if state:
                     break
             carrier, why_not = fmcsa.find_carrier(
                 fetcher, brief.name or host, state=state
