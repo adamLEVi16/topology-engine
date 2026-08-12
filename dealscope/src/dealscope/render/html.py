@@ -39,6 +39,9 @@ def brief_context(brief: CompanyBrief, **extra) -> dict:
         ),
         "narrative_paragraphs": [p for p in brief.narrative.split("\n\n") if p.strip()],
         "model_label": MODEL_LABELS.get(brief.business_model.primary, "unknown"),
+        "secondary_labels": [
+            MODEL_LABELS.get(s, s) for s in brief.business_model.secondary
+        ],
         "tech_by_category": sorted((k, sorted(v)) for k, v in grouped.items()),
         "evidence": brief.all_evidence(),
         "pages_ok": sum(1 for p in brief.pages if not p.get("error")),

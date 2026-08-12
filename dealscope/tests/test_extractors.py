@@ -59,7 +59,7 @@ def test_identity_falls_back_to_title_brand():
 def test_commerce_detects_saas_and_prices(saas_pages):
     model, _evidence = commerce.extract(saas_pages, platform_hints=["Stripe"])
     assert model.primary == "saas"
-    assert model.confidence > 0.3
+    assert model.signal_count >= 3
     assert model.sales_motion == "self-serve"
     assert model.currency == "GBP"
     assert any("29" in p for p in model.price_points)
@@ -106,6 +106,83 @@ def test_commerce_does_not_invent_tiers_from_shop_promo_lines(shop_pages):
     """"Spend $50 / free Shipping" is a banner, not two pricing tiers."""
     model, _ = commerce.extract(shop_pages, platform_hints=["Shopify"])
     assert model.plan_names == []
+
+
+def test_one_phrase_repeated_does_not_decide_the_revenue_model():
+    """Weight alone used to be enough; breadth is now required too.
+
+    "Add to cart" scores 4.0 a hit and the old gate was 5.0, so a page that
+    said it twice and nothing else was published as an e-commerce business.
+    """
+    from .conftest import make_page
+
+    page = make_page(
+        "https://a.test/", "home",
+        "<body><h1>Shop</h1><p>Add to cart</p><p>Add to cart</p></body>",
+    )
+    model, _ = commerce.extract([page])
+    assert model.primary == "unknown"
+    assert model.signal_count == 0
+
+
+def test_a_model_call_reports_how_many_signals_backed_it(saas_pages):
+    """The mirror: a real reading still lands, and says what it rests on."""
+    model, evidence = commerce.extract(saas_pages, platform_hints=["Stripe"])
+    assert model.primary == "saas"
+    assert model.signal_count >= 3
+    primary = [e for e in evidence if e.field == "business_model.primary"]
+    assert primary and "distinct signals matched" in primary[0].snippet
+
+
+def test_the_narrative_states_signals_not_a_percentage(saas_pages):
+    """The percentage was this model's share of total keyword weight.
+
+    It read as a probability, moved with how chatty a site was, and was the
+    sentence a reader was most likely to quote. It is gone.
+    """
+    from dealscope.narrate import build_deterministic
+    from dealscope.models import CompanyBrief
+
+    model, _ = commerce.extract(saas_pages, platform_hints=["Stripe"])
+    brief = CompanyBrief(domain="kettlewind.test")
+    brief.business_model = model
+    text = build_deterministic(brief, date.today())
+    assert "confidence" not in text.lower()
+    assert "distinct signal" in text
+
+
+def test_prices_in_testimonials_and_funding_prose_are_not_price_points():
+    """A number a customer says, or a raise, is not something being sold."""
+    from .conftest import make_page
+
+    page = make_page(
+        "https://a.test/", "home",
+        "<body><h1>Kettlewind</h1>"
+        "<blockquote>It saved us $30,000 in the first year.</blockquote>"
+        "<p>We raised $2.5M in seed funding to build this.</p>"
+        "<p>Plans start at $29 per month.</p>"
+        "</body>",
+    )
+    model, _ = commerce.extract([page])
+    joined = " ".join(model.price_points)
+    assert "30,000" not in joined
+    assert "2.5" not in joined
+    # The mirror: a genuine price on a homepage still comes through.
+    assert any("29" in p for p in model.price_points)
+
+
+def test_a_pricing_page_is_still_read_at_face_value():
+    """The guard is scoped to pages that are not the price list."""
+    from .conftest import make_page
+
+    page = make_page(
+        "https://a.test/pricing", "pricing",
+        "<body><h1>Pricing</h1>"
+        "<p>Our enterprise agreements typically land around $30,000 annually, "
+        "billed against a signed statement of work.</p></body>",
+    )
+    model, _ = commerce.extract([page])
+    assert any("30,000" in p for p in model.price_points)
 
 
 def test_industry_tags_lead_with_the_detected_revenue_model():
@@ -207,6 +284,91 @@ def test_people_rejects_legal_boilerplate_shaped_like_names():
     )
     data, _ = people.extract([page], 12, 15)
     assert data["named_people"] == []
+
+
+def test_people_excludes_names_under_customer_wording():
+    """A testimonial byline is a customer, and must not inflate the team."""
+    from .conftest import make_page
+
+    page = make_page(
+        "https://a.test/about", "about",
+        "<body><h1>About us</h1>"
+        "<p>Dana Whitfield</p><p>Head of Operations</p>"
+        "<h2>What our clients say</h2>"
+        "<p>Marcus Bell</p><p>Practice Owner</p>"
+        "</body>",
+    )
+    data, _ = people.extract([page], 12, 15)
+    names = {p["name"] for p in data["named_people"]}
+    assert "Dana Whitfield" in names
+    assert "Marcus Bell" not in names
+    # Headcount falls back to the roster length, so the exclusion has to carry.
+    assert data["headcount_estimate"] == "1, a solo operator"
+
+
+def test_people_excludes_a_title_naming_another_company():
+    """"Practice Owner, Riverside Clinic" works for the customer."""
+    from .conftest import make_page
+
+    page = make_page(
+        "https://a.test/about", "about",
+        "<body><h1>About</h1>"
+        "<p>Marcus Bell</p><p>Practice Owner, Riverside Clinic</p></body>",
+    )
+    data, _ = people.extract([page], 12, 15)
+    assert data["named_people"] == []
+
+
+def test_people_keeps_a_title_whose_comma_is_a_location():
+    """The mirror of the test above: a city is not another company."""
+    from .conftest import make_page
+
+    page = make_page(
+        "https://a.test/about", "about",
+        "<body><h1>About</h1>"
+        "<p>Dana Whitfield</p><p>Head of Engineering, London</p></body>",
+    )
+    data, _ = people.extract([page], 12, 15)
+    assert [p["name"] for p in data["named_people"]] == ["Dana Whitfield"]
+
+
+def test_headcount_ignores_a_family_of_things():
+    from dealscope.extract.people import HEADCOUNT
+
+    assert HEADCOUNT.search("We are a family of 4 restaurants.") is None
+    assert HEADCOUNT.search("a group of 12 companies") is None
+    # And still reads the forms an earlier fix was written to preserve.
+    for text, expected in (
+        ("a team of 18, based in Bristol", "18"),
+        ("a team of 1,200", "1,200"),
+        ("We're a team of 30 designers", "30"),
+    ):
+        match = HEADCOUNT.search(text)
+        assert match and (match.group(1) or match.group(2)) == expected, text
+
+
+def test_name_tokens_accept_apostrophes_hyphens_and_accents():
+    """These were silently dropped: the token classes were ASCII-only."""
+    from dealscope.extract.people import NAME_LINE
+
+    for name in ("Siobhan O'Brien", "Ana Ruiz-Díaz", "Søren Vestergaard",
+                 "Angus MacLeod", "Priya R. Raman"):
+        assert NAME_LINE.match(name), name
+    # A token with no lowercase letter is a heading, not a person.
+    for heading in ("ABOUT US", "OUR TEAM", "FAQ"):
+        assert NAME_LINE.match(heading) is None, heading
+
+
+def test_founder_prose_reads_an_accented_name():
+    from .conftest import make_page
+
+    page = make_page(
+        "https://a.test/about", "about",
+        "<body><p>Søren Vestergaard founded the company in 2004 after "
+        "leaving a larger firm.</p></body>",
+    )
+    data, _ = people.extract([page], 12, 15)
+    assert any(p["name"] == "Søren Vestergaard" for p in data["named_people"])
 
 
 # --- hiring ---

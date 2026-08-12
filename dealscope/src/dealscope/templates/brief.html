@@ -54,8 +54,11 @@
 <div class="card table-wrap">
   <table>
     <tr><td class="key">Revenue model</td><td>{{ model_label }}</td></tr>
-    {% if brief.business_model.confidence %}
-    <tr><td class="key">Confidence</td><td>{{ (brief.business_model.confidence * 100) | round | int }}% from public signals</td></tr>
+    {% if brief.business_model.signal_count %}
+    <tr><td class="key">Basis</td><td>{{ brief.business_model.signal_count }} distinct public signals matched</td></tr>
+    {% endif %}
+    {% if secondary_labels %}
+    <tr><td class="key">Close second reading</td><td>{{ secondary_labels | join(', ') }}</td></tr>
     {% endif %}
     <tr><td class="key">Sales motion</td><td>{{ brief.business_model.sales_motion }}</td></tr>
     <tr><td class="key">Published prices</td><td>{{ brief.business_model.price_points | join(', ') or 'none found' }}</td></tr>

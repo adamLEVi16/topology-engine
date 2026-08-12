@@ -72,10 +72,14 @@ def to_markdown(brief: CompanyBrief) -> str:
     out.append("| Field | Value |")
     out.append("|---|---|")
     out.append(_row("Revenue model", MODEL_LABELS[model.primary]))
-    if model.confidence:
-        out.append(_row("Confidence", f"{model.confidence:.0%} (from public signals)"))
+    if model.signal_count:
+        out.append(
+            _row("Basis", f"{model.signal_count} distinct public signals matched")
+        )
     if model.secondary:
-        out.append(_row("Secondary signals", ", ".join(MODEL_LABELS[s] for s in model.secondary)))
+        out.append(
+            _row("Close second reading", ", ".join(MODEL_LABELS[s] for s in model.secondary))
+        )
     out.append(_row("Sales motion", model.sales_motion))
     out.append(_row("Published prices", ", ".join(model.price_points) or "none found"))
     if model.plan_names:

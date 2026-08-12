@@ -11,6 +11,7 @@ import re
 from collections import Counter
 from typing import Any
 
+from ..fetch import make_soup
 from ..models import (
     ROLE_ABOUT,
     ROLE_HOME,
@@ -58,7 +59,11 @@ MODEL_SIGNALS: dict[str, tuple[tuple[str, float], ...]] = {
         (r"\b(licen[cs]ed (and|&) insured|fully insured|bonded (and|&) insured)\b", 4.0),
         (r"\b(call (now|us|today)|give us a call|call for a)\b", 2.5),
         (r"\b(schedule (an |your )?(appointment|service|visit|consultation)|book (online|now|a visit))\b", 3.0),
-        (r"\b(serving\s+[A-Z][\w.\- ]{2,40}(county|area|and surrounding|since)?|service area|areas we serve)\b", 3.0),
+        # (?-i:[A-Z]) because _count matches every pattern here with re.I, which
+        # silently defeated this [A-Z] — the same defect that once let a SaaS
+        # homepage publish a service area. Without it, "serving replica" in an
+        # article scored a tech newsletter as a trade business.
+        (r"\b(serving\s+(?-i:[A-Z])[\w.\- ]{2,40}(county|area|and surrounding|since)?|service area|areas we serve)\b", 3.0),
         (r"\b(residential (and|&) commercial|commercial (and|&) residential)\b", 3.0),
         (r"\b(emergency (service|repair|call)|24/7|same[- ]day service)\b", 2.5),
         (r"\b(family[- ]owned|locally owned|third[- ]generation|second[- ]generation)\b", 2.5),
@@ -136,6 +141,15 @@ GENERIC_PLAN_LINE = re.compile(r"^[A-Z][A-Za-z&+/'’ -]{1,22}$")
 
 # A pricing table puts the price on its own line. Anything longer is a sentence.
 TABLE_PRICE_MAX_CHARS = 40
+# …and a table cell is mostly the price, not a clause containing one. "We
+# raised $2.5M in seed funding." is under the character limit and is not a price.
+TABLE_PRICE_MAX_WORDS = 4
+
+# Enough weight, and enough *different* signals, to call a revenue model.
+MIN_MODEL_SCORE = 5.0
+MIN_MODEL_SIGNALS = 3
+# How close the runner-up has to be before it is worth telling the reader about.
+CLOSE_SECOND = 0.75
 
 NAV_WORDS = {
     "about", "blog", "careers", "contact", "company", "cookies", "docs",
@@ -201,13 +215,50 @@ def _count(pattern: str, text: str, cap: int = 3) -> int:
     return min(len(re.findall(pattern, text, re.I)), cap)
 
 
+# A number inside a testimonial belongs to the customer, not the price list.
+# "It saved us $30,000 in the first year" is the single most quoted sentence
+# shape on a B2B homepage, and it was being published as a price point.
+QUOTE_TAGS = ("blockquote", "q", "cite", "figcaption")
+QUOTE_CLASS = re.compile(r"testimonial|quote|review|case-?stud", re.I)
+
+
+def _quoted_text(page: Page) -> str:
+    """Everything on the page that is somebody being quoted, flattened."""
+    soup = make_soup(page.html)
+    parts = [tag.get_text(" ", strip=True) for tag in soup.find_all(QUOTE_TAGS)]
+    parts += [
+        tag.get_text(" ", strip=True) for tag in soup.find_all(attrs={"class": QUOTE_CLASS})
+    ]
+    return " ".join(" ".join(part.split()) for part in parts if part)
+
+
+def _is_table_price(line: str) -> bool:
+    """Does this line read as a pricing-table cell rather than a sentence?
+
+    Length alone is not enough: "We raised $2.5M in seed funding." fits inside
+    the character limit. A cell is also only a handful of words.
+    """
+    return len(line) <= TABLE_PRICE_MAX_CHARS and len(line.split()) <= TABLE_PRICE_MAX_WORDS
+
+
 def _extract_prices(pages: list[Page]) -> tuple[list[str], str, list[Evidence]]:
     """Distinct price points, most prominent currency, and their sources."""
     found: list[tuple[float, str, str]] = []  # (amount, formatted, source url)
     symbols: Counter[str] = Counter()
 
     for page in pages:
+        # A dedicated pricing page is all price list, so numbers there are
+        # taken at face value. Anywhere else a number has to earn it — the same
+        # discipline plan names already get.
+        on_pricing_page = page.role == ROLE_PRICING
+        quoted = "" if on_pricing_page else _quoted_text(page)
+
         for line in page.text.splitlines():
+            stripped = " ".join(line.split())
+            if not stripped:
+                continue
+            if quoted and stripped in quoted:
+                continue
             for match in PRICE.finditer(line):
                 amount = parse_amount(match.group("amt") or match.group("amt2") or "")
                 if amount is None:
@@ -215,11 +266,16 @@ def _extract_prices(pages: list[Page]) -> tuple[list[str], str, list[Evidence]]:
                 # Skip years, phone fragments, and implausible headline numbers.
                 if amount <= 0 or amount > 100_000:
                     continue
+                period = PERIOD.search(line[match.end() : match.end() + 40])
+                # Off a pricing page, either a billing period follows ("£29 per
+                # month" on a homepage is a real price) or the line is a table
+                # cell. Otherwise it is prose about money, not a price.
+                if not on_pricing_page and not period and not _is_table_price(stripped):
+                    continue
                 symbol = match.group("sym") or match.group("sym2") or ""
                 code = _SYMBOL_TO_CODE.get(symbol, symbol.upper())
                 symbols[code] += 1
                 display = match.group(0).strip()
-                period = PERIOD.search(line[match.end() : match.end() + 40])
                 if period:
                     display = f"{display} {period.group(0).strip()}"
                 found.append((amount, " ".join(display.split()), page.final_url))
@@ -294,8 +350,23 @@ def _extract_plans(pages: list[Page]) -> tuple[list[str], list[Evidence]]:
     return names[:8], evidence[:8]
 
 
+# Facts a business that sells callouts publishes, and a B2B consultancy
+# generally does not. Vocabulary alone had to separate "we serve our clients"
+# from "we serve Dayton and Springfield", and it kept getting that wrong. These
+# are structural — a phone in the masthead, opening hours, a named service
+# area, a street address — and the classification leans on them directly.
+LOCAL_CONTACT_FEATURES: tuple[tuple[str, str, float], ...] = (
+    ("service_areas", "a published service area", 3.0),
+    ("phone_in_header", "a phone number in the site header", 2.5),
+    ("opening_hours", "published opening hours", 2.0),
+    ("addresses", "a published street address", 1.5),
+)
+
+
 def extract(
-    pages: list[Page], platform_hints: list[str] | None = None
+    pages: list[Page],
+    platform_hints: list[str] | None = None,
+    contact_facts: dict[str, Any] | None = None,
 ) -> tuple[BusinessModel, list[Evidence]]:
     """Infer the revenue model and pull whatever pricing detail is public."""
     model = BusinessModel()
@@ -335,14 +406,27 @@ def extract(
             scores["saas"] = scores.get("saas", 0) + 2.5
             top_hits.setdefault("saas", []).append(hint)
 
-    ranked = sorted(scores.items(), key=lambda kv: -kv[1])
-    total_score = sum(scores.values()) or 1.0
-    best, best_score = ranked[0]
+    for key, label, weight in LOCAL_CONTACT_FEATURES:
+        if (contact_facts or {}).get(key):
+            scores["local_services"] = scores.get("local_services", 0.0) + weight
+            top_hits.setdefault("local_services", []).append(label)
 
-    if best_score >= 5.0:
+    ranked = sorted(scores.items(), key=lambda kv: -kv[1])
+    best, best_score = ranked[0]
+    # Breadth, not just weight. One heavily weighted phrase repeated three
+    # times used to clear the bar on its own; requiring several *different*
+    # signals is what separates a real reading from an echo.
+    distinct = len(dict.fromkeys(top_hits.get(best, [])))
+
+    if best_score >= MIN_MODEL_SCORE and distinct >= MIN_MODEL_SIGNALS:
         model.primary = best
-        model.confidence = round(min(0.95, best_score / total_score), 2)
-        model.secondary = [name for name, score in ranked[1:3] if score >= best_score * 0.45]
+        model.signal_count = distinct
+        # "A close second reading" has to mean it. At the old 45% cut this said
+        # a tech newsletter might be a local trade business — true of the
+        # arithmetic, false of the company, and now printed in the narrative.
+        model.secondary = [
+            name for name, score in ranked[1:3] if score >= best_score * CLOSE_SECOND
+        ]
         sample = ", ".join(dict.fromkeys(top_hits.get(best, [])))[:180]
         evidence.append(
             Evidence(
@@ -350,13 +434,17 @@ def extract(
                 MODEL_LABELS[best],
                 home_url,
                 "heuristic",
-                model.confidence,
-                snippet=f"matched language: {sample}" if sample else "",
+                # Evidence confidence is about this one observation, not a
+                # probability that the model is right.
+                0.7,
+                snippet=(
+                    f"{distinct} distinct signals matched: {sample}" if sample else ""
+                ),
             )
         )
     else:
         model.primary = "unknown"
-        model.confidence = 0.0
+        model.signal_count = 0
 
     # --- sales motion ---
     self_serve = len(SELF_SERVE.findall(corpus))

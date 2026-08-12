@@ -290,12 +290,16 @@ def _analyze(
 
         say("Extracting evidence …")
 
-        # Order matters: platform fingerprints feed the revenue-model call, and
-        # the revenue model in turn seeds the sector description.
+        # Order matters: platform fingerprints and the published contact facts
+        # both feed the revenue-model call, and the revenue model in turn seeds
+        # the sector description.
         tech_findings, dependencies, integrations, tech_evidence = tech.extract(pages)
+        contact_data, contact_evidence = contact.extract(pages, host)
 
         model, model_evidence = commerce.extract(
-            pages, platform_hints=[t.name for t in tech_findings]
+            pages,
+            platform_hints=[t.name for t in tech_findings],
+            contact_facts=contact_data,
         )
         identity_data, identity_evidence = identity.extract(
             pages, host, business_model=model.primary
@@ -308,7 +312,6 @@ def _analyze(
             domain=host,
         )
         hiring_data, hiring_evidence = hiring.extract(pages)
-        contact_data, contact_evidence = contact.extract(pages, host)
         content_data, content_evidence = content.extract(pages, config.blog_window_days, today)
 
         # --- assemble ---

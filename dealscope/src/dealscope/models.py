@@ -170,7 +170,11 @@ class TechFinding:
 @dataclass
 class BusinessModel:
     primary: str = "unknown"          # saas | ecommerce | services | marketplace | media | hardware
-    confidence: float = 0.0
+    # How the call was reached, rather than a percentage. A share-of-total
+    # number looked like a probability and was not one: it fell when a site
+    # simply said more, and rose when it said little. What a reader can
+    # actually check is how many distinct signals fired and what came second.
+    signal_count: int = 0
     secondary: list[str] = field(default_factory=list)
     sales_motion: str = "unknown"     # self-serve | sales-led | hybrid | retail
     price_points: list[str] = field(default_factory=list)

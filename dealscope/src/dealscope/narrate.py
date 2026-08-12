@@ -122,8 +122,15 @@ def build_deterministic(brief: CompanyBrief, today: date) -> str:
     # "no pricing was found" immediately followed by a list of prices.
     if model.primary != "unknown":
         money = f"Revenue appears to come from {MODEL_PHRASES[model.primary]}"
-        if model.confidence:
-            money += f" (confidence {int(model.confidence * 100)}% on public signals)"
+        # What the reader can check, rather than a percentage that was only ever
+        # this model's share of the total keyword weight on the page.
+        if model.signal_count:
+            plural = "" if model.signal_count == 1 else "s"
+            money += f", on {model.signal_count} distinct signal{plural}"
+        if model.secondary:
+            money += (
+                f"; {MODEL_PHRASES[model.secondary[0]]} is a close second reading"
+            )
         money += "."
     elif model.price_points:
         money = (
@@ -254,7 +261,10 @@ def build_fact_sheet(brief: CompanyBrief, today: date) -> str:
         "apparent_sector": brief.industry_tags or "unknown",
         "founded_year": brief.scale.founded_year or "unknown",
         "revenue_model": MODEL_LABELS[model.primary],
-        "revenue_model_confidence": model.confidence,
+        "revenue_model_signal_count": model.signal_count,
+        "revenue_model_close_second": (
+            [MODEL_LABELS[s] for s in model.secondary] or "none"
+        ),
         "sales_motion": model.sales_motion,
         "published_prices": model.price_points or "none found",
         "plan_names": model.plan_names or "none found",

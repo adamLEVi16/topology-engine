@@ -149,6 +149,28 @@ def _addresses_from_jsonld(pages: list[Page]) -> tuple[list[str], list[str], lis
     return addresses, locations, evidence
 
 
+# Class names sites give the strip across the top of the page.
+HEADER_CLASS = re.compile(r"header|topbar|top-bar|masthead|navbar|nav-|site-nav", re.I)
+HEADER_DEPTH = 6
+
+
+def _in_site_header(anchor) -> bool:
+    """Does this link live in the masthead rather than the footer?"""
+    node = anchor
+    for _ in range(HEADER_DEPTH):
+        node = node.parent
+        if node is None or getattr(node, "name", None) is None:
+            return False
+        if node.name in ("header", "nav"):
+            return True
+        classes = " ".join(node.get("class") or [])
+        if classes and HEADER_CLASS.search(classes):
+            return True
+        if node.name == "footer":
+            return False
+    return False
+
+
 def extract(pages: list[Page], domain: str) -> tuple[dict[str, Any], list[Evidence]]:
     contact_pages = st.pages_by_role(pages, ROLE_CONTACT, ROLE_ABOUT, ROLE_HOME)
     all_ok = [p for p in pages if p.ok]
@@ -163,6 +185,10 @@ def extract(pages: list[Page], domain: str) -> tuple[dict[str, Any], list[Eviden
         "compliance_claims": [],
         "service_areas": [],
         "opening_hours": "",
+        # A phone number in the masthead is what a business that sells by
+        # callout does. It is a structural fact, not a word choice, which is
+        # why the revenue-model call is allowed to lean on it.
+        "phone_in_header": False,
     }
 
     # --- socials ---
@@ -241,6 +267,8 @@ def extract(pages: list[Page], domain: str) -> tuple[dict[str, Any], list[Eviden
     for page in contact_pages or all_ok[:3]:
         soup = make_soup(page.html)
         for anchor in soup.find_all("a", href=TEL_LINK):
+            if _in_site_header(anchor):
+                data["phone_in_header"] = True
             number = _clean_phone(anchor["href"][4:])
             if number and number not in seen_phones:
                 seen_phones.add(number)

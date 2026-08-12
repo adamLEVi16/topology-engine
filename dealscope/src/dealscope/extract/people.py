@@ -21,7 +21,21 @@ from ..models import (
 )
 from . import structured as st
 
-NAME_LINE = re.compile(r"^[A-Z][a-zA-Z'’\-]{1,20}(?:\s+[A-Z][a-zA-Z'’\.\-]{1,20}){1,2}$")
+# One name token, used everywhere a name is matched — roster lines and prose
+# alike. Previously each site had its own character class and they disagreed:
+# the prose patterns allowed no apostrophe in the first position and neither
+# allowed an accent anywhere, so O'Brien, Ruiz-Díaz and Søren were silently
+# dropped from the roster while Smith was kept.
+#
+# Python's re has no \p{Lu}, so the Latin-1 letter ranges are spelled out. The
+# token must contain at least one lowercase letter, which is what stops an
+# ALLCAPS heading ("ABOUT US") from reading as a person.
+_UP = "A-ZÀ-ÖØ-Þ"
+_LO = "a-zà-öø-ÿ"
+_NAME_TOKEN = rf"[{_UP}][{_UP}{_LO}'’\-]{{0,19}}[{_LO}][{_UP}{_LO}'’\-]{{0,10}}"
+_INITIAL = rf"[{_UP}]\.?"
+
+NAME_LINE = re.compile(rf"^{_NAME_TOKEN}(?:\s+(?:{_NAME_TOKEN}|{_INITIAL})){{1,2}}$")
 
 TITLE_LINE = re.compile(
     r"\b(ceo|cto|coo|cfo|cmo|cpo|cio|founder|co-?founder|owner|principal|partner|president|"
@@ -96,12 +110,31 @@ def _plausible_name(name: str) -> bool:
 _COUNT = r"(?<![\d,.])(\d{1,3}(?:,\d{3})+|\d{1,5})(?!\d|,\d)"
 _APPROX = r"(?:about\s+|around\s+|over\s+|more than\s+|nearly\s+)?"
 
+# Things a business can be "a family of" that are not employees. "A family of
+# four restaurants" read as a headcount of four. A positive list of person
+# nouns cannot do this job here: it would also throw away "a team of 18, based
+# in Bristol", which names no noun at all, and "a team of 30 designers", whose
+# noun no closed list will ever contain. So the guard names the collectives
+# that are countable *things*, and everything else is still allowed through.
+_NOT_PEOPLE = (
+    r"restaurants?|brands?|companies|businesses|stores?|shops?|locations?|"
+    r"products?|offices?|sites?|websites?|hotels?|clinics?|practices?|"
+    r"publications?|titles?|apps?|services?|communities|blogs?|newsletters?|"
+    r"podcasts?|projects?|labels?|studios?|franchises?|dealerships?|branches?|"
+    r"outlets?|brands|properties|vehicles?|trucks?|stores"
+)
+_PERSON_NOUN = (
+    r"employees|people|staff|team members|professionals|engineers|designers|"
+    r"developers|consultants|technicians|specialists|advisors|advisers|experts|"
+    r"contractors|craftspeople|colleagues"
+)
+
 HEADCOUNT = re.compile(
     rf"\b(?:team of|we(?:'| a)?re a? ?team of|staff of|group of|family of|company of)\s+"
-    rf"{_APPROX}{_COUNT}\b"
+    rf"{_APPROX}{_COUNT}\b(?!\s+(?:{_NOT_PEOPLE})\b)"
     rf"|\b(?:we (?:have|employ)|employing|with a team of|our team of)\s+"
     rf"{_APPROX}{_COUNT}\+?\s+"
-    r"(?:employees|people|staff|team members|professionals|engineers)\b",
+    rf"(?:{_PERSON_NOUN})\b",
     re.I,
 )
 
@@ -141,6 +174,50 @@ def _people_from_jsonld(pages: list[Page]) -> tuple[list[dict[str, str]], list[E
     return people, evidence
 
 
+CUSTOMER_CONTEXT = re.compile(
+    r"(customers?|clients?|trusted by|used by|works? with|partners?|brands?|"
+    r"case stud|testimonial|as seen (in|on)|featured (in|on)|our work)",
+    re.I,
+)
+
+# The tail of a job title that names a different organisation. A testimonial is
+# always attributed this way — "Practice Owner, Riverside Clinic" — and that
+# person works for the customer, not for the business being valued.
+ORG_TAIL = re.compile(
+    r"\b(inc|llc|ltd|limited|corp|corporation|co|company|group|holdings|partners|"
+    r"associates|clinic|clinics|practice|practices|hospital|health|medical|dental|"
+    r"studio|studios|agency|salon|spa|bank|school|academy|university|college|"
+    r"church|restaurant|cafe|brewery|motors|automotive|logistics|transport|"
+    r"trucking|construction|contracting|realty|properties|solutions|systems|"
+    r"labs|technologies|software|media|foundation|institute|society|association)\b",
+    re.I,
+)
+
+# How far above a name to look for wording that frames the whole block as
+# customers. A heading sits within a line or two of what it introduces.
+CUSTOMER_LOOKBACK = 3
+
+
+def _external_person(title: str) -> bool:
+    """Does this title attribute the person to another organisation?
+
+    Only a comma-separated tail that reads as an organisation counts. "Head of
+    Engineering, London" is a colleague with a location, not a customer.
+    """
+    if "," not in title:
+        return False
+    tail = title.split(",", 1)[1].strip(" .")
+    if not tail or not tail[:1].isupper():
+        return False
+    return bool(ORG_TAIL.search(tail))
+
+
+def _under_customer_wording(lines: list[str], index: int) -> bool:
+    """Is this line sitting under a heading that introduces customers?"""
+    start = max(0, index - CUSTOMER_LOOKBACK)
+    return bool(CUSTOMER_CONTEXT.search(" ".join(lines[start:index])))
+
+
 def _people_from_text(pages: list[Page], limit: int) -> tuple[list[dict[str, str]], list[Evidence]]:
     """Pair a name-shaped line with a job title on a nearby line.
 
@@ -162,6 +239,11 @@ def _people_from_text(pages: list[Page], limit: int) -> tuple[list[dict[str, str
             # otherwise pass as a name. A job title is never the person.
             if TITLE_LINE.search(line):
                 continue
+            # A name under "What our clients say" belongs to a customer. Adding
+            # them to the roster overstated the team and, because headcount
+            # falls back to the roster length, overstated headcount with it.
+            if _under_customer_wording(lines, index):
+                continue
             for offset in (1, 2):
                 if index + offset >= len(lines):
                     break
@@ -169,6 +251,8 @@ def _people_from_text(pages: list[Page], limit: int) -> tuple[list[dict[str, str
                 if not following or len(following) > 80:
                     continue
                 if TITLE_LINE.search(following):
+                    if _external_person(following):
+                        break
                     key = line.lower()
                     if key not in seen:
                         seen.add(key)
@@ -195,7 +279,7 @@ def _people_from_text(pages: list[Page], limit: int) -> tuple[list[dict[str, str
 # Spaces are matched as [ \t] rather than \s throughout: \s crosses newlines,
 # which would let a heading run into the sentence below it and produce names
 # like "About Kettlewind Priya Raman".
-_NAME = r"(?P<name>[A-Z][a-z]{1,15}(?:[ \t]+[A-Z][a-z'’\-]{1,20}){1,2})"
+_NAME = rf"(?P<name>{_NAME_TOKEN}(?:[ \t]+{_NAME_TOKEN}){{1,2}})"
 
 FOUNDER_PROSE = re.compile(
     rf"\b{_NAME}[ \t]+(?P<verb>started|founded|co-?founded|launched|created|bootstrapped)\b"
@@ -248,6 +332,8 @@ def _people_from_prose(
                 else:
                     title = " ".join(match.group("title").split()).strip(" ,&")
                     title = title[:1].upper() + title[1:]
+                    if _external_person(title):
+                        continue
                 seen.add(key)
                 people.append({"name": name, "title": title})
                 start = max(0, match.start() - 30)
@@ -265,13 +351,6 @@ def _people_from_prose(
                     return people, evidence
 
     return people, evidence
-
-
-CUSTOMER_CONTEXT = re.compile(
-    r"(customers?|clients?|trusted by|used by|works? with|partners?|brands?|"
-    r"case stud|testimonial|as seen (in|on)|featured (in|on)|our work)",
-    re.I,
-)
 
 
 # Placeholder alt text on a logo wall. "Client" is a label, not a client.

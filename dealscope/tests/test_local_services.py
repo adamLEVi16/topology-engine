@@ -85,7 +85,7 @@ def test_local_trades_are_recognised(fixture, request):
     pages = request.getfixturevalue(fixture)
     model, _ = commerce.extract(pages)
     assert model.primary == "local_services"
-    assert model.confidence > 0.3
+    assert model.signal_count >= 3
 
 
 def test_a_consultancy_is_still_read_as_services():
@@ -99,6 +99,75 @@ def test_a_consultancy_is_still_read_as_services():
     )
     model, _ = commerce.extract([page])
     assert model.primary == "services"
+
+
+AMBIGUOUS_TRADE_HTML = (
+    "<body><h1>Harding & Sons</h1>"
+    "<p>We install, repair and maintain. Our team will take care of it. "
+    "Residential and commercial. Family-owned since 1994. "
+    "Schedule a visit and we will give you a free estimate.</p></body>"
+)
+
+
+def test_contact_facts_settle_the_services_local_services_tie():
+    """Vocabulary alone could not tell a trade business from a consultancy.
+
+    "We serve our clients" and "we serve Dayton" read the same to a keyword
+    table. A phone in the masthead, opening hours, a named service area and a
+    street address do not — they are structural, and much harder to fake.
+    """
+    page = make_page("https://harding.test/", "home", AMBIGUOUS_TRADE_HTML)
+
+    with_facts, _ = commerce.extract(
+        [page],
+        contact_facts={
+            "service_areas": ["Dayton, Springfield"],
+            "phone_in_header": True,
+            "opening_hours": "Mon-Fri 8am-5pm",
+            "addresses": ["114 Mill Road, Dayton, OH 45402"],
+        },
+    )
+    assert with_facts.primary == "local_services"
+    assert "a published service area" in " ".join(
+        e.snippet for e in with_facts.evidence if e.field == "business_model.primary"
+    )
+
+
+def test_contact_facts_do_not_drag_a_consultancy_into_local_services():
+    """The mirror: an office with a phone and an address is not a trade business."""
+    page = make_page(
+        "https://advisory.test/", "home",
+        "<body><h1>Strategy consulting</h1>"
+        "<p>Our clients include global banks. Book a consultation. "
+        "Our approach is bespoke and tailored to your engagement. "
+        "Case studies show our process. Request a proposal. Retainer available.</p></body>",
+    )
+    model, _ = commerce.extract(
+        [page],
+        contact_facts={
+            "phone_in_header": True,
+            "addresses": ["30 Finsbury Square, London"],
+        },
+    )
+    assert model.primary == "services"
+
+
+def test_a_phone_in_the_footer_is_not_a_phone_in_the_header():
+    """The signal is the masthead specifically, not "publishes a number"."""
+    from dealscope.extract import contact as contact_module
+
+    header = make_page(
+        "https://a.test/contact", "contact",
+        "<body><header><a href='tel:+15135550101'>(513) 555-0101</a></header>"
+        "<p>Call us.</p></body>",
+    )
+    footer = make_page(
+        "https://b.test/contact", "contact",
+        "<body><p>Call us.</p>"
+        "<footer><a href='tel:+15135550101'>(513) 555-0101</a></footer></body>",
+    )
+    assert contact_module.extract([header], "a.test")[0]["phone_in_header"] is True
+    assert contact_module.extract([footer], "b.test")[0]["phone_in_header"] is False
 
 
 # --- local signals ---

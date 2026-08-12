@@ -57,7 +57,12 @@ def build_signals(brief: CompanyBrief, today: date) -> list[Signal]:
     model = brief.business_model
     if model.primary != "unknown":
         add("revenue_model", "Revenue model", "commercial",
-            f"Public material reads as {model.primary}", model.primary, model.confidence)
+            f"Public material reads as {model.primary} on {model.signal_count} "
+            "distinct signals",
+            model.primary,
+            # Weight rises with breadth of evidence and tops out at 0.9. It is a
+            # weight on a signal, not a claim about how likely the call is.
+            min(0.9, 0.4 + 0.1 * model.signal_count))
     if model.price_points:
         add("public_pricing", "Pricing is public", "commercial",
             "Published price points make revenue easier to sanity-check",
