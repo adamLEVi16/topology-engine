@@ -1,0 +1,20 @@
+{% extends "_layout.html" %}
+{% block title %}Reading {{ job.domain }} — dealscope{% endblock %}
+{% block head_extra %}<meta http-equiv="refresh" content="2">{% endblock %}
+{% block content %}
+
+<h1>Reading {{ job.domain }}</h1>
+<p class="meta">{{ job.elapsed }}s elapsed · this page refreshes itself</p>
+
+<div class="card">
+  <p><span class="spinner" aria-hidden="true"></span> <strong>{{ job.progress }}</strong></p>
+  <p class="score-why" style="margin-bottom:0">
+    Pages are fetched one at a time with a deliberate pause between them, so a
+    large site takes 30–60 seconds. Leave this tab open; the brief appears here
+    when it is done.
+  </p>
+</div>
+
+<p style="margin-top:1.5rem"><a href="/">Cancel and start over</a></p>
+
+{% endblock %}

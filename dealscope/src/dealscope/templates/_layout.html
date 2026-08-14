@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}dealscope{% endblock %}</title>
+{% block head_extra %}{% endblock %}
+<style>
+  :root {
+    --bg: #fbfbfa;
+    --surface: #ffffff;
+    --border: #e3e1dd;
+    --ink: #1c1b1a;
+    --muted: #6d6a66;
+    --accent: #3d5a80;
+    --accent-soft: #eaf0f6;
+    --high: #9b2c2c;
+    --high-bg: #fdeeee;
+    --medium: #8a5a12;
+    --medium-bg: #fdf4e5;
+    --low: #4a5568;
+    --low-bg: #f0f2f5;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16171a;
+      --surface: #1e2024;
+      --border: #32353b;
+      --ink: #e8e6e3;
+      --muted: #9c9892;
+      --accent: #8fb0d4;
+      --accent-soft: #232c36;
+      --high: #f2a0a0;
+      --high-bg: #2e1e1e;
+      --medium: #e5c07b;
+      --medium-bg: #2c2519;
+      --low: #a9b2c0;
+      --low-bg: #232629;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2rem 1.25rem 5rem;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.65 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 60rem; margin: 0 auto; }
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  h1 { font-size: 1.85rem; line-height: 1.25; margin: 0 0 .4rem; letter-spacing: -0.02em; }
+  h2 {
+    font-size: 1.05rem; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--muted); margin: 2.75rem 0 .9rem; font-weight: 600;
+  }
+  h3 { font-size: 1rem; margin: 1.4rem 0 .5rem; }
+  p { margin: 0 0 .9rem; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em; }
+
+  .meta { color: var(--muted); font-size: .9rem; margin-bottom: 1.25rem; }
+  .disclaimer {
+    background: var(--accent-soft); border-left: 3px solid var(--accent);
+    padding: .8rem 1rem; border-radius: 0 var(--radius) var(--radius) 0;
+    font-size: .9rem; color: var(--muted); margin-bottom: 2rem;
+  }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 1.15rem 1.35rem;
+  }
+  .summary { font-size: 1.05rem; }
+  .summary p:last-child { margin-bottom: 0; }
+
+  .scores { display: grid; gap: .85rem; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+  .score-label { font-size: .78rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+  .score-value { font-size: 1.9rem; font-weight: 600; letter-spacing: -0.02em; }
+  .score-value span { font-size: .95rem; font-weight: 400; color: var(--muted); }
+  .bar { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; margin: .5rem 0 .55rem; }
+  .bar > i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+  .score-why { font-size: .8rem; color: var(--muted); line-height: 1.5; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+  th, td { text-align: left; padding: .55rem .7rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; }
+  tr:last-child td { border-bottom: none; }
+  td.key { color: var(--muted); width: 34%; }
+  .table-wrap { overflow-x: auto; }
+
+  .flag { border-radius: var(--radius); padding: .9rem 1.1rem; margin-bottom: .8rem; border: 1px solid transparent; }
+  .flag h3 { margin: 0 0 .35rem; font-size: .98rem; }
+  .flag p { margin: 0; font-size: .9rem; }
+  .flag.high { background: var(--high-bg); border-color: var(--high); }
+  .flag.high h3 { color: var(--high); }
+  .flag.medium { background: var(--medium-bg); border-color: var(--medium); }
+  .flag.medium h3 { color: var(--medium); }
+  .flag.low { background: var(--low-bg); border-color: var(--border); }
+  .flag.low h3 { color: var(--low); }
+  .sev {
+    font-size: .68rem; text-transform: uppercase; letter-spacing: .08em;
+    border: 1px solid currentColor; border-radius: 999px; padding: .1rem .45rem; margin-left: .5rem;
+    vertical-align: middle;
+  }
+
+  ul, ol { margin: 0; padding-left: 1.25rem; }
+  li { margin-bottom: .4rem; }
+  .two-col { display: grid; gap: 1.25rem; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); }
+  .pill {
+    display: inline-block; background: var(--accent-soft); color: var(--accent);
+    border-radius: 999px; padding: .12rem .6rem; font-size: .8rem; margin: 0 .3rem .3rem 0;
+  }
+  details { margin-top: 1rem; }
+  summary { cursor: pointer; color: var(--accent); font-size: .9rem; }
+  details[open] summary { margin-bottom: .8rem; }
+  footer { margin-top: 3rem; color: var(--muted); font-size: .82rem; border-top: 1px solid var(--border); padding-top: 1rem; }
+
+  form.lookup { display: flex; gap: .55rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+  form.lookup input[type=text] {
+    flex: 1 1 18rem; padding: .7rem .9rem; font-size: 1rem; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  }
+  form.lookup button {
+    padding: .7rem 1.4rem; font-size: 1rem; font-weight: 600; cursor: pointer;
+    background: var(--accent); color: #fff; border: none; border-radius: var(--radius);
+  }
+  form.lookup button:hover { opacity: .9; }
+  .opts { font-size: .85rem; color: var(--muted); display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+  .error { background: var(--high-bg); border: 1px solid var(--high); color: var(--high);
+           padding: .8rem 1rem; border-radius: var(--radius); margin-bottom: 1.5rem; }
+  .spinner {
+    display: inline-block; width: .85em; height: .85em; vertical-align: -.08em;
+    border: 2px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin .8s linear infinite; margin-right: .4rem;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+{% block content %}{% endblock %}
+</div>
+</body>
+</html>

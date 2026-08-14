@@ -1,0 +1,39 @@
+{% extends "_layout.html" %}
+{% block title %}dealscope — buyer briefs from public websites{% endblock %}
+{% block content %}
+
+<h1>dealscope</h1>
+<p class="meta">A short, sceptical brief on any business, built from its public website.</p>
+
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+{% include "_form.html" %}
+
+<div class="disclaimer">{{ disclaimer }}</div>
+
+<h2>What you get</h2>
+<div class="card">
+  <ul>
+    <li><strong>A plain-language summary</strong> of what the business appears to be and how it appears to make money.</li>
+    <li><strong>Revenue-model inference</strong> — SaaS, e-commerce, services, marketplace, media, or hardware — with the signals behind the call.</li>
+    <li><strong>Scale and momentum signals</strong>: people named, customers named, hiring activity, publishing cadence, site freshness.</li>
+    <li><strong>Technology and platform dependencies</strong> that turn into migration work after a sale.</li>
+    <li><strong>Risk flags</strong> and, more usefully, <strong>an explicit list of what a website cannot tell you</strong>.</li>
+    <li><strong>Questions to ask the seller</strong>, tailored to the revenue model detected.</li>
+    <li><strong>Evidence for every claim</strong>, each with the URL it came from.</li>
+  </ul>
+</div>
+
+<h2>How it reads a site</h2>
+<div class="card">
+  <p>It fetches the homepage, works out which pages matter — pricing, about, team,
+  careers, customers, legal — and reads those. It identifies itself in its
+  User-Agent, honours <code>robots.txt</code>, waits between requests, and caches
+  what it reads so a repeat run costs the site nothing.</p>
+  <p class="score-why">It reads server-rendered HTML only. Sites that build their
+  navigation in the browser will yield less, and the brief says so when that happens
+  rather than reporting an absence as a finding.</p>
+</div>
+
+<footer>dealscope v{{ version }} · runs locally · nothing is sent anywhere except the site being read.</footer>
+{% endblock %}

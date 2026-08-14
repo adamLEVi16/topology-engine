@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dealscope"
+version = "0.1.0"
+description = "Builds an acquisition-buyer brief for a business from its public web footprint."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+dependencies = [
+  "requests>=2.31",
+  "beautifulsoup4>=4.12",
+  "lxml>=4.9",
+  "Jinja2>=3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+# Headless rendering for client-rendered sites. Optional: without it dealscope
+# reads server HTML only and says so in the brief.
+js = [
+  "playwright>=1.40",
+]
+
+[project.scripts]
+dealscope = "dealscope.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.package-data]
+dealscope = ["templates/*.html"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
