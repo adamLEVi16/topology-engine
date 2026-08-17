@@ -35,6 +35,18 @@ python3 teambuy/build.py     # -> teambuy/dist/teambuy-demo.html
 The build fails loudly if any local asset is left un-inlined, so the output is always
 safe to open offline or host somewhere that blocks external requests.
 
+## The capital stack
+
+The `#math` section is the centre of the argument: almost all of a Main Street deal is
+bank debt, and that part is not the obstacle. Two sliders (purchase price, operator's own
+cash) drive one stacked bar, annotated with a bracket over the equity injection — the only
+band that ever blocks a capable operator.
+
+Chart colours are a separate, validated categorical set (not the brand canary, which
+fails the lightness band and contrast as a data colour). Both light and dark steps pass
+the six checks — lightness band, chroma floor, CVD separation, normal-vision floor and
+contrast — with a hover tooltip, a legend carrying exact values, and a table view.
+
 ## The board
 
 `app.js` holds five operator profiles and five capital profiles. Selecting one of each
