@@ -357,6 +357,9 @@ def to_text(brief: CompanyBrief) -> str:
     lines.append("")
 
     ok = sum(1 for p in brief.pages if not p.get("error"))
-    lines.append(f"Read {ok} of {len(brief.pages)} pages attempted on {brief.domain}.")
+    lines.append(
+        f"Read {ok} of {len(brief.pages)} pages attempted on {brief.domain}. "
+        f"dealscope v{brief.version}."
+    )
     lines.append(DISCLAIMER)
     return "\n".join(lines)

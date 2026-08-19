@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-__version__ = "0.1.0"
+__version__ = "0.5.0"
 
 DEFAULT_USER_AGENT = (
     f"dealscope/{__version__} (+https://github.com/adamlevi16/topology-engine; "
