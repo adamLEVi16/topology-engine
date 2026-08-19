@@ -42,6 +42,25 @@ _STRIP_TAGS = ("script", "style", "noscript", "svg", "template", "iframe")
 # --- URL helpers -----------------------------------------------------------
 
 
+# Marketplaces where businesses are *listed*. Only the host survives
+# normalisation, so pasting a listing URL used to analyse the marketplace
+# itself and return a confident, well-formatted brief about BizBuySell —
+# silently, with no hint that the wrong thing had been read.
+LISTING_VENUES = {
+    "bizbuysell.com", "bizquest.com", "businessesforsale.com", "bizben.com",
+    "dealstream.com", "loopnet.com", "businessbroker.net", "sunbeltnetwork.com",
+    "murphybusiness.com", "transworldma.com", "flippa.com", "acquire.com",
+    "microacquire.com", "empireflippers.com", "quietlight.com", "latonas.com",
+    "bizbe.com", "routesforsale.net", "vendedroutes.com",
+}
+
+
+def is_listing_venue(host: str) -> bool:
+    """Is this a marketplace rather than a company's own site?"""
+    host = (host or "").lower().lstrip(".")
+    return any(host == venue or host.endswith("." + venue) for venue in LISTING_VENUES)
+
+
 def normalize_domain(raw: str) -> str:
     """Turn user input (``Acme.com``, ``https://acme.com/x?y``) into a host."""
     value = (raw or "").strip()
@@ -49,9 +68,19 @@ def normalize_domain(raw: str) -> str:
         raise ValueError("empty domain")
     if "://" not in value:
         value = "https://" + value
-    host = (urlparse(value).hostname or "").lower()
+    parsed = urlparse(value)
+    host = (parsed.hostname or "").lower()
     if not host:
         raise ValueError(f"could not parse a hostname from {raw!r}")
+    # Refuse rather than quietly analyse the wrong company. A bare marketplace
+    # domain is a legitimate thing to look at; a *listing* on one is not.
+    if is_listing_venue(host) and parsed.path.strip("/"):
+        raise ValueError(
+            f"{raw!r} looks like a listing on {host}, not a company's own site. "
+            "This tool reads a business's own website — analysing this URL would "
+            f"produce a brief about {host} itself. Use the seller's own domain, "
+            "or --usdot for a carrier record."
+        )
     return host
 
 

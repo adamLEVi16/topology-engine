@@ -57,6 +57,11 @@ class Config:
     # Public-records lookups. Off by default: FMCSA covers US motor carriers
     # only, so it is opt-in rather than a cost every analysis pays.
     use_fmcsa: bool = False
+    # A USDOT number supplied by the user. When set, the carrier record is
+    # fetched directly and no name matching happens at all — which is the
+    # right path for route businesses, where the seller knows the number and
+    # the company often has no website for a name to be scraped from.
+    usdot: str = ""
 
     # Caching
     cache_dir: Path = field(default_factory=_default_cache_dir)

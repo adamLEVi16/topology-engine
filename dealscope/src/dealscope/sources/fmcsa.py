@@ -88,6 +88,21 @@ class Carrier:
         return self.dba_name or self.legal_name
 
     @property
+    def how_found(self) -> str:
+        """How this record came to be attached to the brief.
+
+        A lookup by USDOT number has no match score to report — a number is an
+        identity, so there was nothing to match and nothing to get wrong.
+        Printing "matched at 0%" for it read as a failed match.
+        """
+        if not self.match_basis:
+            return "looked up directly by USDOT number — no name matching involved"
+        return (
+            f"{self.match_score:.0%} — {self.match_basis}; "
+            f"{self.considered} candidate(s) considered"
+        )
+
+    @property
     def is_active(self) -> bool:
         # Exact compare: "ACTIVE" is a substring of "INACTIVE", which is the
         # literal value SAFER writes for a deregistered carrier.
@@ -285,6 +300,44 @@ def get_snapshot(fetcher: Any, usdot: str) -> Carrier | None:
     if not page.ok:
         return None
     return parse_snapshot(page.html, usdot)
+
+
+# SAFER serves a page titled "RECORD INACTIVE" for a number that once existed
+# and no longer has live authority. That is a finding. A number that returns
+# nothing at all is not — see below.
+_INACTIVE_PAGE = re.compile(r"RECORD\s+INACTIVE", re.I)
+
+
+def get_snapshot_with_note(fetcher: Any, usdot: str) -> tuple[Carrier | None, str]:
+    """The carrier record, or an explanation of why there isn't one.
+
+    The three outcomes are genuinely different and a buyer needs them kept
+    apart. An inactive record means the operating authority is dead — ask what
+    happened. An empty result means nothing at all: vehicles under 10,001 lbs
+    GVWR are not required to hold a USDOT number, so plenty of legitimate P&D
+    fleets running Sprinter-class vans have no SAFER record. Reporting that as
+    a red flag would be inventing a finding out of an absence.
+    """
+    page = fetcher.get(SNAPSHOT_URL.format(usdot=usdot), role="fmcsa")
+    if not page.ok:
+        return None, (
+            f"the FMCSA register could not be reached for USDOT {usdot} "
+            f"({page.error or page.status})"
+        )
+    carrier = parse_snapshot(page.html, usdot)
+    if carrier is not None:
+        return carrier, ""
+    if _INACTIVE_PAGE.search(page.html or ""):
+        return None, (
+            f"USDOT {usdot} exists but SAFER reports the record as inactive — "
+            "the operating authority is not live. Ask the seller what happened "
+            "to it and under whose authority the routes run today."
+        )
+    return None, (
+        f"no FMCSA record was returned for USDOT {usdot}. Absence is not "
+        "itself a finding: vehicles under 10,001 lbs GVWR are not required to "
+        "hold a USDOT number, so a van-only fleet legitimately has no record."
+    )
 
 
 def score_match(carrier: Carrier, name: str, state: str = "", city: str = "") -> tuple[float, str]:

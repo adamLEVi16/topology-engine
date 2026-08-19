@@ -148,9 +148,7 @@ def to_markdown(brief: CompanyBrief) -> str:
             if fleet.mcs150_date:
                 out.append(_row("MCS-150 last filed", fleet.mcs150_date.isoformat()))
             out.append(_row("Address on file", fleet.physical_address))
-            out.append(_row("Match confidence",
-                            f"{fleet.match_score:.0%} — {fleet.match_basis}; "
-                            f"{fleet.considered} candidate(s) considered"))
+            out.append(_row("How matched", fleet.how_found))
             out.append("")
             out.append(
                 "_Filed with the federal government, not claimed on a website. "
@@ -335,7 +333,7 @@ def to_text(brief: CompanyBrief) -> str:
             f"  power units: {fleet.power_units}   drivers: {fleet.drivers}"
             f"   status: {fleet.operating_status or 'not stated'}"
         )
-        lines.append(f"  matched at {fleet.match_score:.0%} — {fleet.match_basis}")
+        lines.append(f"  {fleet.how_found}")
         lines.append("")
     elif brief.fleet_note:
         lines.append("FEDERAL CARRIER RECORD (FMCSA)")

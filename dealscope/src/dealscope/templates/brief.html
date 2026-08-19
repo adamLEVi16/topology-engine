@@ -128,9 +128,7 @@
     <tr><td class="key">MCS-150 last filed</td><td>{{ brief.fleet.mcs150_date }}</td></tr>
     {% endif %}
     <tr><td class="key">Address on file</td><td>{{ brief.fleet.physical_address }}</td></tr>
-    <tr><td class="key">Match confidence</td><td>
-      {{ (brief.fleet.match_score * 100) | round | int }}% — {{ brief.fleet.match_basis }};
-      {{ brief.fleet.considered }} candidate(s) considered</td></tr>
+    <tr><td class="key">How matched</td><td>{{ brief.fleet.how_found }}</td></tr>
   </table>
   <p class="score-why" style="margin-top:1rem">Filed with the federal government, not
   claimed on a website. Power units is the closest thing to a hard measure of size.</p>
