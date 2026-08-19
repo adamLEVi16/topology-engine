@@ -193,32 +193,53 @@ ORG_TAIL = re.compile(
     re.I,
 )
 
-# How far above a name to look for wording that frames the whole block as
-# customers. A heading sits within a line or two of what it introduces.
-CUSTOMER_LOOKBACK = 3
+# Wording that, *as a heading*, frames the section below it as customers.
+# Deliberately narrower than CUSTOMER_CONTEXT: "partners" is a job title at a
+# law or consulting firm and "Partners" is a standard team-page heading, so
+# including it deleted those firms' entire rosters. "works with" is dropped for
+# the same reason — it is prose, not a section header.
+CUSTOMER_HEADING = re.compile(
+    r"(customers?|clients?|trusted by|used by|testimonial|case stud|"
+    r"what (our|they) say|as seen (in|on)|featured (in|on)|our work)",
+    re.I,
+)
+
+# An own-name fragment shorter than this is too generic to match a title tail on.
+MIN_OWN_NAME = 4
 
 
-def _external_person(title: str) -> bool:
-    """Does this title attribute the person to another organisation?
+def _external_person(title: str, own_names: set[str] | None = None) -> bool:
+    """Does this title attribute the person to a *different* organisation?
 
-    Only a comma-separated tail that reads as an organisation counts. "Head of
-    Engineering, London" is a colleague with a location, not a customer.
+    Only a comma-separated tail that reads as an organisation counts, so "Head
+    of Engineering, London" is a colleague with a location. And the tail must
+    not be the company's own name: "CEO, Kettlewind Logistics" on Kettlewind's
+    own team page is the person a buyer most needs named, not a testimonial.
     """
     if "," not in title:
         return False
     tail = title.split(",", 1)[1].strip(" .")
     if not tail or not tail[:1].isupper():
         return False
+    flat = re.sub(r"[^a-z0-9]", "", tail.lower())
+    for own in own_names or ():
+        if len(own) >= MIN_OWN_NAME and flat and (own in flat or flat in own):
+            return False
     return bool(ORG_TAIL.search(tail))
 
 
-def _under_customer_wording(lines: list[str], index: int) -> bool:
-    """Is this line sitting under a heading that introduces customers?"""
-    start = max(0, index - CUSTOMER_LOOKBACK)
-    return bool(CUSTOMER_CONTEXT.search(" ".join(lines[start:index])))
+def _headings_of(page: Page) -> set[str]:
+    """Every h1-h6 on the page, flattened, for section detection."""
+    soup = make_soup(page.html)
+    return {
+        " ".join(tag.get_text(" ", strip=True).split()).lower()
+        for tag in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"])
+    }
 
 
-def _people_from_text(pages: list[Page], limit: int) -> tuple[list[dict[str, str]], list[Evidence]]:
+def _people_from_text(
+    pages: list[Page], limit: int, own_names: set[str] | None = None
+) -> tuple[list[dict[str, str]], list[Evidence]]:
     """Pair a name-shaped line with a job title on a nearby line.
 
     Requiring the title is what keeps ``Privacy Policy`` and ``San Francisco``
@@ -229,8 +250,18 @@ def _people_from_text(pages: list[Page], limit: int) -> tuple[list[dict[str, str
     seen: set[str] = set()
 
     for page in pages:
+        headings = _headings_of(page)
         lines = [line.strip() for line in page.text.splitlines()]
+        # Which section of the page we are standing in. Tracking the heading is
+        # what makes the customer test safe: scanning the preceding lines meant
+        # a colleague's own job title ("Customer Success Lead") put the next
+        # person inside a customer block and deleted them — and the one after
+        # that, and the CFO listed below them.
+        section = ""
         for index, line in enumerate(lines):
+            flat = " ".join(line.split()).lower()
+            if flat and flat in headings:
+                section = flat
             if not NAME_LINE.match(line) or NOT_A_NAME.search(line):
                 continue
             if not _plausible_name(line):
@@ -239,10 +270,8 @@ def _people_from_text(pages: list[Page], limit: int) -> tuple[list[dict[str, str
             # otherwise pass as a name. A job title is never the person.
             if TITLE_LINE.search(line):
                 continue
-            # A name under "What our clients say" belongs to a customer. Adding
-            # them to the roster overstated the team and, because headcount
-            # falls back to the roster length, overstated headcount with it.
-            if _under_customer_wording(lines, index):
+            # A name under a "What our clients say" heading is a customer.
+            if section and CUSTOMER_HEADING.search(section):
                 continue
             for offset in (1, 2):
                 if index + offset >= len(lines):
@@ -251,7 +280,7 @@ def _people_from_text(pages: list[Page], limit: int) -> tuple[list[dict[str, str
                 if not following or len(following) > 80:
                     continue
                 if TITLE_LINE.search(following):
-                    if _external_person(following):
+                    if _external_person(following, own_names):
                         break
                     key = line.lower()
                     if key not in seen:
@@ -332,7 +361,7 @@ def _people_from_prose(
                 else:
                     title = " ".join(match.group("title").split()).strip(" ,&")
                     title = title[:1].upper() + title[1:]
-                    if _external_person(title):
+                    if _external_person(title, exclude):
                         continue
                 seen.add(key)
                 people.append({"name": name, "title": title})
@@ -483,7 +512,7 @@ def extract(
 
     people, people_evidence = _people_from_jsonld(team_pages or pages[:1])
     if len(people) < 3:
-        merge(*_people_from_text(team_pages, max_people))
+        merge(*_people_from_text(team_pages, max_people, own_names))
     if len(people) < 3:
         merge(*_people_from_prose(team_pages, own_names, max_people))
 

@@ -672,3 +672,101 @@ def test_a_section_index_link_does_not_overrule_no_openings():
     )
     data, _ = hiring.extract([page])
     assert data["open_roles"] == 0
+
+
+# --- roster: keeping and excluding, side by side ---
+#
+# Every regression in this area has lived in the same blind spot: a test that
+# asserts one person is excluded, with nobody after them to prove the exclusion
+# did not spread. These assert both directions on the same page.
+
+
+def test_a_colleagues_title_does_not_delete_the_people_below_them():
+    """"Customer Success Lead" is a job, not a customer section heading.
+
+    Scanning raw preceding lines put every later name inside a customer block:
+    the roster collapsed to one person, which then fired the "one-person
+    operation" risk flag on a company whose CFO was named on the same page.
+    """
+    from .conftest import make_page
+
+    page = make_page(
+        "https://a.test/team", "team",
+        "<body><h1>Our Team</h1>"
+        "<p>Ana Duarte</p><p>Customer Success Lead</p>"
+        "<p>Ben Osei</p><p>Head of Engineering</p>"
+        "<p>Cara Lin</p><p>Chief Financial Officer</p></body>",
+    )
+    data, _ = people.extract([page], 12, 15)
+    assert [p["name"] for p in data["named_people"]] == [
+        "Ana Duarte", "Ben Osei", "Cara Lin",
+    ]
+    assert any(p["name"] == "Cara Lin" for p in data["leadership"])
+
+
+def test_a_partners_heading_does_not_empty_a_professional_firm():
+    """"Partners" is the standard team-page heading at a law or consulting firm."""
+    from .conftest import make_page
+
+    page = make_page(
+        "https://b.test/team", "team",
+        "<body><h1>Partners</h1>"
+        "<p>Jane Ashcroft</p><p>Managing Partner</p>"
+        "<p>Tom Reid</p><p>Partner</p></body>",
+    )
+    data, _ = people.extract([page], 12, 15)
+    assert [p["name"] for p in data["named_people"]] == ["Jane Ashcroft", "Tom Reid"]
+
+
+def test_a_customer_heading_still_excludes_everyone_under_it():
+    """The mirror: narrowing the guard must not stop it working."""
+    from .conftest import make_page
+
+    page = make_page(
+        "https://c.test/about", "about",
+        "<body><h1>About us</h1>"
+        "<p>Dana Whitfield</p><p>Head of Operations</p>"
+        "<h2>What our clients say</h2>"
+        "<p>Marcus Bell</p><p>Practice Owner</p>"
+        "<p>Nina Patel</p><p>Operations Manager</p></body>",
+    )
+    data, _ = people.extract([page], 12, 15)
+    assert [p["name"] for p in data["named_people"]] == ["Dana Whitfield"]
+
+
+def test_the_companys_own_name_in_a_title_is_not_a_customer():
+    """"Jane Ashcroft, CEO, Acme Trucking" on Acme Trucking's own team page.
+
+    ORG_TAIL matches "logistics", "trucking", "clinic" and friends — the
+    segments this tool targets — so every executive was classed as a customer
+    and the brief reported "nobody is named publicly".
+    """
+    from .conftest import make_page
+
+    page = make_page(
+        "https://k.test/team", "team",
+        "<body><h1>Our Team</h1>"
+        "<p>Jane Ashcroft</p><p>CEO, Kettlewind Logistics</p>"
+        "<p>Tom Reid</p><p>Operations Director, Kettlewind Logistics</p></body>",
+    )
+    data, _ = people.extract(
+        [page], 12, 15, company_name="Kettlewind Logistics", domain="kettlewind.test"
+    )
+    assert [p["name"] for p in data["named_people"]] == ["Jane Ashcroft", "Tom Reid"]
+    assert data["headcount_estimate"] == "at least 2"
+    assert [p["name"] for p in data["leadership"]] == ["Jane Ashcroft"]
+
+
+def test_another_companys_name_in_a_title_is_still_a_customer():
+    """The mirror: the exemption is the company's own name, not any name."""
+    from .conftest import make_page
+
+    page = make_page(
+        "https://k.test/about", "about",
+        "<body><h1>About</h1>"
+        "<p>Marcus Bell</p><p>Practice Owner, Riverside Clinic</p></body>",
+    )
+    data, _ = people.extract(
+        [page], 12, 15, company_name="Kettlewind Logistics", domain="kettlewind.test"
+    )
+    assert data["named_people"] == []
