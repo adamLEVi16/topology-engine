@@ -15,10 +15,10 @@ Kettlewind operates at kettlewind.com, presenting itself in SaaS / software and
 healthcare. The site leads with "Scheduling that clinics actually stick with".
 It claims to have been founded in 2016.
 
-Revenue appears to come from software subscriptions (confidence 81% on public
-signals). Published prices include £29 per month, £79 per month, and £249 per
-month. Plans are named Starter, Practice, and Enterprise. On the evidence of its
-calls to action, buyers can sign up without talking to anyone.
+Revenue appears to come from software subscriptions, on 6 distinct signals.
+Published prices include £29 per month, £79 per month, and £249 per month. Plans
+are named Starter, Practice, and Enterprise. On the evidence of its calls to
+action, buyers can sign up without talking to anyone.
 
 Headcount looks like ~18 (stated on the site); leadership is named publicly —
 Priya Raman (Chief Executive Officer); 3 open roles are advertised across
@@ -28,7 +28,7 @@ Nothing here speaks to revenue, margins, churn, or owner dependency — none of
 that is publicly observable.
 
 SCORES
-  Maturity           ███████████████·····    76/100  strong
+  Public footprint   ███████████████·····    76/100  substantial
   Momentum           █████████████·······    67/100  established
   Transparency       ████████████████····    85/100  strong
   Evidence coverage  ███████████████████·    96/100  strong
@@ -162,8 +162,8 @@ for evidence in brief.all_evidence():
 | Section | What it answers |
 |---|---|
 | Summary | What the business appears to be and how it appears to make money |
-| Scorecard | Maturity, momentum, transparency — plus evidence coverage, the confidence gauge for the brief itself |
-| Business model | SaaS, e-commerce, services, marketplace, media, or hardware; sales motion; published prices, plans, billing periods |
+| Scorecard | Public footprint, momentum, transparency — plus evidence coverage, the confidence gauge for the brief itself |
+| Business model | SaaS, e-commerce, services, local trade services, marketplace, media, or hardware; how many distinct signals backed the call, and the runner-up when it was close; sales motion; published prices, plans, billing periods |
 | Scale and team | Headcount signals, named leadership, locations, named customers, founding year |
 | Momentum | Open roles and departments, publishing cadence, site freshness, funding or ownership mentions |
 | Operations | Technology fingerprints, and platform dependencies that become migration work after a sale |
@@ -205,9 +205,21 @@ business barely has a website.
 
 ```bash
 python -m dealscope analyze acme-hauling.com --fmcsa
+
+# better, when you know the number — no name matching happens at all
+python -m dealscope analyze acme-hauling.com --usdot 1554728
 ```
 
-This matches the company against [FMCSA SAFER](https://safer.fmcsa.dot.gov/)
+`--usdot` is the right path for a route or carrier business. A number is an
+identity, so there is nothing to match and nothing to get wrong — and these
+businesses very often have no website for a name to be scraped from anyway.
+Three outcomes are kept apart, because they mean different things to a buyer: a
+record is a record; a record SAFER reports as *inactive* means the operating
+authority is dead, which is a finding; and **no record at all is not a finding**,
+because vehicles under 10,001 lbs GVWR are not required to hold a USDOT number,
+so a van-only fleet legitimately has none.
+
+Without a number, this matches the company against [FMCSA SAFER](https://safer.fmcsa.dot.gov/)
 and adds a section carrying **power units (trucks), driver count, operating
 status, inspection and crash counts, out-of-service rate, and the MCS-150
 filing date** — every field linked to the SAFER record it came from. Power
