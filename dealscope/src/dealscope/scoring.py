@@ -494,12 +494,24 @@ def build_risk_flags(
                 "USDOT number.",
                 evidence=[e for e in fleet.evidence if e.field == "fleet.mcs150_date"],
             ))
-    elif brief.fleet_note and "no FMCSA record found" not in brief.fleet_note:
+    elif brief.fleet_note_kind == "inactive":
+        # A number that exists and has lost its authority is a finding, and a
+        # serious one — not a failure to match.
+        flags.append(RiskFlag(
+            "carrier_inactive_record", "Federal operating authority is not live", "high",
+            brief.fleet_note,
+        ))
+    elif brief.fleet_note_kind == "unmatched":
         flags.append(RiskFlag(
             "carrier_unmatched", "Could not confidently match a federal carrier record", "low",
             brief.fleet_note + ". Ask the seller for the USDOT number directly rather "
             "than relying on a name match.",
         ))
+    # "absent" and "unreachable" raise nothing on purpose. A fleet under 10,001
+    # lbs GVWR needs no USDOT number, so no record is not a finding about the
+    # business; and a register that timed out is a fact about the register. The
+    # note still prints — it just is not dressed up as a risk. Matching on the
+    # note's wording instead of this field is what turned all three into one.
 
     errors = [p for p in brief.pages if p.get("error")]
     if len(errors) >= 3:

@@ -84,7 +84,7 @@ def test_a_usdot_number_needs_no_name_matching():
     no website for a name to be scraped from in the first place.
     """
     fetcher = _FakeFetcher(_FakePage(SNAPSHOT_HTML))
-    carrier, note = fmcsa.get_snapshot_with_note(fetcher, "1554728")
+    carrier, note, _kind = fmcsa.get_snapshot_with_note(fetcher, "1554728")
     assert note == ""
     assert carrier is not None
     assert carrier.power_units == 12
@@ -99,7 +99,7 @@ def test_an_inactive_record_is_reported_as_a_finding():
         _FakePage("<html><head><title>SAFER Web - Company Snapshot RECORD INACTIVE"
                   "</title></head><body></body></html>")
     )
-    carrier, note = fmcsa.get_snapshot_with_note(fetcher, "202964")
+    carrier, note, _kind = fmcsa.get_snapshot_with_note(fetcher, "202964")
     assert carrier is None
     assert "inactive" in note.lower()
     assert "authority" in note.lower()
@@ -113,7 +113,7 @@ def test_a_missing_record_is_reported_as_not_a_finding():
     manufacture a finding out of an absence.
     """
     fetcher = _FakeFetcher(_FakePage("<html><body>nothing here</body></html>"))
-    carrier, note = fmcsa.get_snapshot_with_note(fetcher, "9999999")
+    carrier, note, _kind = fmcsa.get_snapshot_with_note(fetcher, "9999999")
     assert carrier is None
     assert "not" in note.lower() and "finding" in note.lower()
     assert "10,001" in note
@@ -121,6 +121,99 @@ def test_a_missing_record_is_reported_as_not_a_finding():
 
 def test_an_unreachable_register_is_not_reported_as_an_absent_record():
     fetcher = _FakeFetcher(_FakePage("", ok=False, status=503, error="timeout"))
-    carrier, note = fmcsa.get_snapshot_with_note(fetcher, "1554728")
+    carrier, note, _kind = fmcsa.get_snapshot_with_note(fetcher, "1554728")
     assert carrier is None
     assert "could not be reached" in note
+
+
+# --- the note's kind, not its wording, decides the flag ---
+
+
+def test_a_direct_lookup_carries_its_own_evidence():
+    """Only find_carrier attached evidence, so the --usdot path cited nothing.
+
+    The brief showed power units and drivers with no source behind them, and
+    the fleet risk flags rendered with an empty evidence list.
+    """
+    fetcher = _FakeFetcher(_FakePage(SNAPSHOT_HTML))
+    carrier, _note, _kind = fmcsa.get_snapshot_with_note(fetcher, "1554728")
+    fields = {e.field for e in carrier.evidence}
+    assert "fleet.power_units" in fields
+    assert all(e.source_url for e in carrier.evidence)
+
+
+def test_an_absent_record_raises_no_risk_flag():
+    """The whole point of the note is that absence is not a finding.
+
+    The flag suppression matched one phrase from find_carrier, so all three
+    new notes raised "could not confidently match" — turning the sentence that
+    says this is not a finding into a finding.
+    """
+    from datetime import date
+
+    from dealscope.models import CompanyBrief
+    from dealscope.scoring import build_risk_flags
+
+    brief = CompanyBrief(domain="x.test", pages=[{"role": "home", "words": 900, "url": "u"}])
+    brief.fleet_note = "no FMCSA record was returned for USDOT 9999999. Absence is not…"
+    brief.fleet_note_kind = fmcsa.NOTE_ABSENT
+
+    keys = {f.key for f in build_risk_flags(brief, date.today())}
+    assert "carrier_unmatched" not in keys
+    assert "carrier_inactive_record" not in keys
+
+
+def test_an_unreachable_register_raises_no_risk_flag():
+    from datetime import date
+
+    from dealscope.models import CompanyBrief
+    from dealscope.scoring import build_risk_flags
+
+    brief = CompanyBrief(domain="x.test", pages=[{"role": "home", "words": 900, "url": "u"}])
+    brief.fleet_note = "the FMCSA register could not be reached for USDOT 1554728 (timeout)"
+    brief.fleet_note_kind = fmcsa.NOTE_UNREACHABLE
+
+    assert not {f.key for f in build_risk_flags(brief, date.today())} & {
+        "carrier_unmatched", "carrier_inactive_record"
+    }
+
+
+def test_an_inactive_record_is_a_high_flag_not_a_match_failure():
+    """The mirror: a dead authority must not be downgraded to "unmatched"."""
+    from datetime import date
+
+    from dealscope.models import CompanyBrief
+    from dealscope.scoring import build_risk_flags
+
+    brief = CompanyBrief(domain="x.test", pages=[{"role": "home", "words": 900, "url": "u"}])
+    brief.fleet_note = "USDOT 202964 exists but SAFER reports the record as inactive…"
+    brief.fleet_note_kind = fmcsa.NOTE_INACTIVE
+
+    flags = {f.key: f for f in build_risk_flags(brief, date.today())}
+    assert "carrier_inactive_record" in flags
+    assert flags["carrier_inactive_record"].severity == "high"
+    assert "carrier_unmatched" not in flags
+
+
+def test_listing_urls_are_refused_by_query_and_fragment_too():
+    """Venues address listings differently; only the path was being checked."""
+    for url in (
+        "https://www.bizbuysell.com/?listing=2312345",
+        "https://www.bizbuysell.com/#/listing/2312345",
+        "https://www.bizquest.com/business-for-sale/routes/98765/",
+    ):
+        with pytest.raises(ValueError):
+            normalize_domain(url)
+    # And the mirror, unchanged: the bare venue is still analysable.
+    assert normalize_domain("https://www.bizbuysell.com") == "www.bizbuysell.com"
+
+
+def test_one_usdot_cannot_be_spread_across_a_batch():
+    """A number identifies one carrier; a batch would share one fleet."""
+    from dealscope.cli import _build_parser, _run_analyze
+
+    args = _build_parser().parse_args(
+        ["analyze", "a.test", "b.test", "--usdot", "1554728"]
+    )
+    with pytest.raises(SystemExit):
+        _run_analyze(args)

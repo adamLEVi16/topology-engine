@@ -109,11 +109,19 @@ def _config_from(args: argparse.Namespace) -> Config:
         config.use_js = False
     if getattr(args, "fmcsa", False):
         config.use_fmcsa = True
-    usdot = "".join(ch for ch in getattr(args, "usdot", "") or "" if ch.isdigit())
+    raw_usdot = (getattr(args, "usdot", "") or "").strip()
+    usdot = "".join(ch for ch in raw_usdot if ch.isdigit())
     if usdot:
         # Asking for a specific carrier record is asking for the lookup.
         config.usdot = usdot
         config.use_fmcsa = True
+    elif raw_usdot:
+        # Silently dropping it would run a plain website analysis and leave the
+        # reader thinking the carrier record had been checked and come back empty.
+        raise SystemExit(
+            f"--usdot {raw_usdot!r} contains no digits. A USDOT number is numeric, "
+            "e.g. --usdot 1554728."
+        )
     if hasattr(args, "llm_model"):
         config.llm_model = args.llm_model
     return config
@@ -134,6 +142,14 @@ def _run_analyze(args: argparse.Namespace) -> int:
             print(f"  {message}", file=sys.stderr)
 
     many = len(args.domains) > 1
+    if many and config.usdot:
+        # One number identifies one carrier. Applying it across a batch would
+        # attach the same fleet — the same trucks, drivers and crash history —
+        # to every brief in the run.
+        raise SystemExit(
+            "--usdot identifies a single carrier, so it cannot be used with "
+            "several domains. Run them one at a time."
+        )
     destination: Path | None = args.output
     if many and destination is not None:
         destination.mkdir(parents=True, exist_ok=True)

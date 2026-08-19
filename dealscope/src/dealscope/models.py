@@ -295,6 +295,9 @@ class CompanyBrief:
     # a ``sources.fmcsa.Carrier`` dataclass and serializes like any other.
     fleet: Any = None
     fleet_note: str = ""
+    # Why there is no record: absent, inactive, unreachable, or unmatched.
+    # Risk flags dispatch on this rather than on the note's wording.
+    fleet_note_kind: str = ""
 
     scores: ScoreCard | None = None
     signals: list[Signal] = field(default_factory=list)

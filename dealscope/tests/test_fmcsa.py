@@ -210,6 +210,7 @@ def test_an_ambiguous_match_becomes_a_low_flag_not_a_silent_gap():
     brief = CompanyBrief(domain="x.test", pages=[{"role": "home", "words": 900, "url": "u"}])
     brief.fleet = None
     brief.fleet_note = "several FMCSA records match “Acme Hauling” about equally well"
+    brief.fleet_note_kind = fmcsa.NOTE_UNMATCHED
 
     flags = build_risk_flags(brief, date.today())
     assert any(f.key == "carrier_unmatched" for f in flags)

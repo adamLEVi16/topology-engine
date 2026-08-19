@@ -308,7 +308,15 @@ def get_snapshot(fetcher: Any, usdot: str) -> Carrier | None:
 _INACTIVE_PAGE = re.compile(r"RECORD\s+INACTIVE", re.I)
 
 
-def get_snapshot_with_note(fetcher: Any, usdot: str) -> tuple[Carrier | None, str]:
+# Why no carrier record is attached. The three are genuinely different and the
+# risk flags dispatch on them rather than on the wording of the note.
+NOTE_ABSENT = "absent"
+NOTE_INACTIVE = "inactive"
+NOTE_UNREACHABLE = "unreachable"
+NOTE_UNMATCHED = "unmatched"
+
+
+def get_snapshot_with_note(fetcher: Any, usdot: str) -> tuple[Carrier | None, str, str]:
     """The carrier record, or an explanation of why there isn't one.
 
     The three outcomes are genuinely different and a buyer needs them kept
@@ -323,21 +331,25 @@ def get_snapshot_with_note(fetcher: Any, usdot: str) -> tuple[Carrier | None, st
         return None, (
             f"the FMCSA register could not be reached for USDOT {usdot} "
             f"({page.error or page.status})"
-        )
+        ), NOTE_UNREACHABLE
     carrier = parse_snapshot(page.html, usdot)
     if carrier is not None:
-        return carrier, ""
+        # The name-matching path attaches these; the direct path has to as
+        # well, or the brief cites a fleet it never sourced and the fleet risk
+        # flags render with no evidence behind them.
+        carrier.evidence = build_evidence(carrier)
+        return carrier, "", ""
     if _INACTIVE_PAGE.search(page.html or ""):
         return None, (
             f"USDOT {usdot} exists but SAFER reports the record as inactive — "
             "the operating authority is not live. Ask the seller what happened "
             "to it and under whose authority the routes run today."
-        )
+        ), NOTE_INACTIVE
     return None, (
         f"no FMCSA record was returned for USDOT {usdot}. Absence is not "
         "itself a finding: vehicles under 10,001 lbs GVWR are not required to "
         "hold a USDOT number, so a van-only fleet legitimately has no record."
-    )
+    ), NOTE_ABSENT
 
 
 def score_match(carrier: Carrier, name: str, state: str = "", city: str = "") -> tuple[float, str]:

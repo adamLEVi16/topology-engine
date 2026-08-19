@@ -73,8 +73,11 @@ def normalize_domain(raw: str) -> str:
     if not host:
         raise ValueError(f"could not parse a hostname from {raw!r}")
     # Refuse rather than quietly analyse the wrong company. A bare marketplace
-    # domain is a legitimate thing to look at; a *listing* on one is not.
-    if is_listing_venue(host) and parsed.path.strip("/"):
+    # domain is a legitimate thing to look at; a *listing* on one is not — and
+    # a listing is addressed by path, query, or fragment depending on the
+    # venue, so checking the path alone let ?listing=… straight through.
+    deep = bool(parsed.path.strip("/") or parsed.query or parsed.fragment)
+    if is_listing_venue(host) and deep:
         raise ValueError(
             f"{raw!r} looks like a listing on {host}, not a company's own site. "
             "This tool reads a business's own website — analysing this URL would "

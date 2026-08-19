@@ -376,7 +376,9 @@ def _analyze(
                 # A number is an identity. Nothing to match, nothing to get
                 # wrong — which is why this is the path for route businesses.
                 say(f"Fetching FMCSA record for USDOT {config.usdot} …")
-                carrier, why_not = fmcsa.get_snapshot_with_note(fetcher, config.usdot)
+                carrier, why_not, note_kind = fmcsa.get_snapshot_with_note(
+                    fetcher, config.usdot
+                )
             else:
                 say("Checking the FMCSA carrier register …")
                 state = ""
@@ -387,8 +389,10 @@ def _analyze(
                 carrier, why_not = fmcsa.find_carrier(
                     fetcher, brief.name or host, state=state
                 )
+                note_kind = fmcsa.NOTE_UNMATCHED if why_not else ""
             brief.fleet = carrier
             brief.fleet_note = why_not
+            brief.fleet_note_kind = note_kind
             if carrier is not None:
                 brief.scale.evidence.extend(carrier.evidence)
 

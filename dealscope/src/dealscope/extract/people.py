@@ -193,16 +193,32 @@ ORG_TAIL = re.compile(
     re.I,
 )
 
-# Wording that, *as a heading*, frames the section below it as customers.
-# Deliberately narrower than CUSTOMER_CONTEXT: "partners" is a job title at a
-# law or consulting firm and "Partners" is a standard team-page heading, so
-# including it deleted those firms' entire rosters. "works with" is dropped for
-# the same reason — it is prose, not a section header.
+# Headings that introduce testimonials, anchored and spelled out in full.
+#
+# A loose vocabulary here is dangerous in one direction only: a false positive
+# deletes real people, and the brief then reports the company as smaller than
+# it is — or as naming nobody at all. Bare "customers", "clients" and "our
+# work" matched "Customer Success" (a department) and "Our Work" (a portfolio),
+# emptying the rosters of the companies that had them. Failing the other way
+# only means a testimonial byline occasionally survives, which the
+# other-organisation check still catches.
 CUSTOMER_HEADING = re.compile(
-    r"(customers?|clients?|trusted by|used by|testimonial|case stud|"
-    r"what (our|they) say|as seen (in|on)|featured (in|on)|our work)",
+    r"^(?:"
+    r"what (?:our |their )?(?:clients?|customers?|people|partners?) say"
+    r"|(?:client|customer|success)[ -]stor(?:y|ies)"
+    r"|(?:client|customer) (?:testimonials?|reviews?|voices)"
+    r"|testimonials?"
+    r"|case stud(?:y|ies)"
+    r"|trusted by"
+    r"|reviews?"
+    r"|in their own words"
+    r"|as seen (?:in|on)"
+    r"|featured (?:in|on)"
+    r")\b",
     re.I,
 )
+
+_HEADING_TAGS = ("h1", "h2", "h3", "h4", "h5", "h6")
 
 # An own-name fragment shorter than this is too generic to match a title tail on.
 MIN_OWN_NAME = 4
@@ -222,19 +238,47 @@ def _external_person(title: str, own_names: set[str] | None = None) -> bool:
     if not tail or not tail[:1].isupper():
         return False
     flat = re.sub(r"[^a-z0-9]", "", tail.lower())
+    # Anchored containment, not a bare substring test: matching any four-char
+    # fragment anywhere let kent.com claim "Practice Owner, Kentucky Medical
+    # Group" as its own staff.
     for own in own_names or ():
-        if len(own) >= MIN_OWN_NAME and flat and (own in flat or flat in own):
+        if len(own) < MIN_OWN_NAME or not flat:
+            continue
+        if flat == own or flat.startswith(own) or own.startswith(flat):
             return False
     return bool(ORG_TAIL.search(tail))
 
 
-def _headings_of(page: Page) -> set[str]:
-    """Every h1-h6 on the page, flattened, for section detection."""
+def _customer_lines(page: Page) -> set[str]:
+    """Flattened text lines sitting under a testimonial heading.
+
+    Resolved on the DOM rather than by scanning flattened lines, because both
+    cheaper approaches fail on ordinary markup. Comparing a line against the
+    set of heading texts misses "What our <span>clients</span> say", whose
+    flattened line never equals the heading text. And tracking "the last line
+    that looked like a heading" breaks on the commonest testimonial pattern of
+    all — the byline is itself a heading, so <h3>Marcus Bell</h3> closed the
+    very section it sat inside and let the whole block into the roster.
+
+    A section runs from its heading to the next heading of the same or higher
+    rank, so a deeper heading inside it stays inside it.
+    """
     soup = make_soup(page.html)
-    return {
-        " ".join(tag.get_text(" ", strip=True).split()).lower()
-        for tag in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"])
-    }
+    blocked: set[str] = set()
+
+    for heading in soup.find_all(_HEADING_TAGS):
+        text = " ".join(heading.get_text(" ", strip=True).split())
+        if not CUSTOMER_HEADING.search(text):
+            continue
+        rank = int(heading.name[1])
+        for node in heading.find_all_next():
+            name = getattr(node, "name", "")
+            if name in _HEADING_TAGS and int(name[1]) <= rank:
+                break
+            line = " ".join(node.get_text(" ", strip=True).split())
+            if line:
+                blocked.add(line)
+    return blocked
 
 
 def _people_from_text(
@@ -250,18 +294,13 @@ def _people_from_text(
     seen: set[str] = set()
 
     for page in pages:
-        headings = _headings_of(page)
+        # Resolved once per page, on the DOM. Scanning the preceding lines for
+        # customer wording — the first attempt at this — meant a colleague's own
+        # job title ("Customer Success Lead") put the next person inside a
+        # customer block and deleted them, along with everyone listed after.
+        in_customer_block = _customer_lines(page)
         lines = [line.strip() for line in page.text.splitlines()]
-        # Which section of the page we are standing in. Tracking the heading is
-        # what makes the customer test safe: scanning the preceding lines meant
-        # a colleague's own job title ("Customer Success Lead") put the next
-        # person inside a customer block and deleted them — and the one after
-        # that, and the CFO listed below them.
-        section = ""
         for index, line in enumerate(lines):
-            flat = " ".join(line.split()).lower()
-            if flat and flat in headings:
-                section = flat
             if not NAME_LINE.match(line) or NOT_A_NAME.search(line):
                 continue
             if not _plausible_name(line):
@@ -271,7 +310,7 @@ def _people_from_text(
             if TITLE_LINE.search(line):
                 continue
             # A name under a "What our clients say" heading is a customer.
-            if section and CUSTOMER_HEADING.search(section):
+            if " ".join(line.split()) in in_customer_block:
                 continue
             for offset in (1, 2):
                 if index + offset >= len(lines):
