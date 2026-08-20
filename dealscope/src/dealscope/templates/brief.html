@@ -124,6 +124,13 @@
     <tr><td class="key">Out-of-service rate</td><td>{{ brief.fleet.out_of_service_pct }}
       {%- if brief.fleet.national_average_pct %} (national average {{ brief.fleet.national_average_pct }}){% endif %}</td></tr>
     {% endif %}
+    {% if brief.fleet.annual_miles %}
+    <tr><td class="key"><strong>Annual miles driven</strong></td><td>
+      <strong>{{ "{:,}".format(brief.fleet.annual_miles) }}</strong>
+      {%- if brief.fleet.mileage_year %} <span class="score-why">(reported for {{ brief.fleet.mileage_year }})</span>{% endif %}
+      {%- if brief.fleet.miles_per_unit %}<br><span class="score-why">~{{ "{:,}".format(brief.fleet.miles_per_unit) }} per power unit — utilisation, not revenue</span>{% endif %}
+    </td></tr>
+    {% endif %}
     {% if brief.fleet.mcs150_date %}
     <tr><td class="key">MCS-150 last filed</td><td>{{ brief.fleet.mcs150_date }}</td></tr>
     {% endif %}

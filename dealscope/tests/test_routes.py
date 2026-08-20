@@ -242,3 +242,42 @@ def test_a_name_matched_record_still_reports_its_score():
     matched.considered = 4
     assert "91%" in matched.how_found
     assert "4 candidate(s) considered" in matched.how_found
+
+
+# --- annual mileage: the closest public measure of operating scale ---
+
+
+MILEAGE_HTML = SNAPSHOT_HTML.replace(
+    "<tr><th>MCS-150 Form Date:</th><td>03/27/2026</td></tr>",
+    "<tr><th>MCS-150 Form Date:</th><td>03/27/2026</td></tr>"
+    "<tr><th>MCS-150 Mileage (Year):</th><td>17,581,156 (2025)</td></tr>",
+)
+
+
+def test_annual_miles_and_utilisation_are_read():
+    """Power units say how many trucks exist; miles say how hard they ran."""
+    fetcher = _FakeFetcher(_FakePage(MILEAGE_HTML))
+    carrier, _note, _kind = fmcsa.get_snapshot_with_note(fetcher, "54988")
+    assert carrier.annual_miles == 17_581_156
+    assert carrier.mileage_year == "2025"
+    # 17,581,156 over 12 power units in the fixture.
+    assert carrier.miles_per_unit == round(17_581_156 / 12)
+
+
+def test_mileage_is_absent_rather_than_zero_when_unfiled():
+    """A carrier that never filed mileage must not read as having driven none."""
+    fetcher = _FakeFetcher(_FakePage(SNAPSHOT_HTML))
+    carrier, _note, _kind = fmcsa.get_snapshot_with_note(fetcher, "1554728")
+    assert carrier.annual_miles is None
+    assert carrier.miles_per_unit is None
+    assert carrier.mileage_year == ""
+
+
+def test_utilisation_needs_both_numbers():
+    """No trucks on file means no division — not a divide-by-zero, not a guess."""
+    from dealscope.sources.fmcsa import Carrier
+
+    c = Carrier(usdot="1", mcs150_mileage="100,000 (2025)")
+    c.power_units = None
+    assert c.annual_miles == 100_000
+    assert c.miles_per_unit is None

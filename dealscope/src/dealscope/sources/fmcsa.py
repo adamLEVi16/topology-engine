@@ -88,6 +88,39 @@ class Carrier:
         return self.dba_name or self.legal_name
 
     @property
+    def annual_miles(self) -> int | None:
+        """Miles driven in the year the MCS-150 reports, if it states one.
+
+        SAFER writes this as "17,581,156 (2025)". It is the closest thing to a
+        measure of *operating* scale in any public record: power units say how
+        many trucks exist, this says how hard they ran.
+        """
+        found = re.search(r"([\d,]+)", self.mcs150_mileage or "")
+        if not found:
+            return None
+        digits = found.group(1).replace(",", "")
+        return int(digits) if digits.isdigit() and int(digits) > 0 else None
+
+    @property
+    def mileage_year(self) -> str:
+        found = re.search(r"\((\d{4})\)", self.mcs150_mileage or "")
+        return found.group(1) if found else ""
+
+    @property
+    def miles_per_unit(self) -> int | None:
+        """Annual miles divided by trucks — a utilisation figure, not a guess.
+
+        Both numbers are the carrier's own filing; this is only the division.
+        Nothing here estimates revenue: miles do not carry a rate, and
+        inventing one would be exactly the kind of confident wrong number this
+        tool exists to avoid.
+        """
+        miles, units = self.annual_miles, self.power_units
+        if not miles or not units:
+            return None
+        return round(miles / units)
+
+    @property
     def how_found(self) -> str:
         """How this record came to be attached to the brief.
 

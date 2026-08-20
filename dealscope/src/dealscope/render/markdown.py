@@ -145,6 +145,14 @@ def to_markdown(brief: CompanyBrief) -> str:
                                 f"{fleet.out_of_service_pct}"
                                 + (f" (national average {fleet.national_average_pct})"
                                    if fleet.national_average_pct else "")))
+            if fleet.annual_miles:
+                miles = f"{fleet.annual_miles:,}"
+                if fleet.mileage_year:
+                    miles += f" (reported for {fleet.mileage_year})"
+                out.append(_row("**Annual miles driven**", miles))
+                if fleet.miles_per_unit:
+                    out.append(_row("Miles per power unit",
+                                    f"~{fleet.miles_per_unit:,} — utilisation, not revenue"))
             if fleet.mcs150_date:
                 out.append(_row("MCS-150 last filed", fleet.mcs150_date.isoformat()))
             out.append(_row("Address on file", fleet.physical_address))
@@ -333,6 +341,13 @@ def to_text(brief: CompanyBrief) -> str:
             f"  power units: {fleet.power_units}   drivers: {fleet.drivers}"
             f"   status: {fleet.operating_status or 'not stated'}"
         )
+        if fleet.annual_miles:
+            miles = f"  annual miles: {fleet.annual_miles:,}"
+            if fleet.mileage_year:
+                miles += f" ({fleet.mileage_year})"
+            if fleet.miles_per_unit:
+                miles += f"   ~{fleet.miles_per_unit:,} per truck"
+            lines.append(miles)
         lines.append(f"  {fleet.how_found}")
         lines.append("")
     elif brief.fleet_note:
