@@ -246,3 +246,52 @@ def test_questions_suit_a_trade_business(plumber_pages):
     assert "vehicles" in joined
     assert "mrr" not in joined          # SaaS questions must not leak in
     assert "average order value" not in joined
+
+
+def test_a_quiet_trade_business_is_not_asked_why_it_is_quiet():
+    """The narrative says a missing blog means nothing here — so don't ask.
+
+    The brief stated "there is no blog or careers page, which is normal for
+    this kind of business and says nothing about how it is trading", then
+    asked "the site shows little recent activity — is the business still
+    trading at normal volume?" three paragraphs later.
+    """
+    from datetime import date
+
+    from dealscope.models import BusinessModel, CompanyBrief, Momentum
+    from dealscope.scoring import build_diligence_questions
+
+    brief = CompanyBrief(domain="landscaper.test")
+    brief.business_model = BusinessModel(primary="local_services")
+    brief.momentum = Momentum(last_content_date=None, copyright_year=date.today().year)
+
+    asked = " ".join(build_diligence_questions(brief))
+    assert "little recent activity" not in asked
+
+
+def test_a_stale_copyright_is_still_asked_about_anywhere():
+    """The mirror: a footer frozen years ago is a signal for any business."""
+    from datetime import date
+
+    from dealscope.models import BusinessModel, CompanyBrief, Momentum
+    from dealscope.scoring import build_diligence_questions
+
+    brief = CompanyBrief(domain="landscaper.test")
+    brief.business_model = BusinessModel(primary="local_services")
+    brief.momentum = Momentum(last_content_date=None, copyright_year=date.today().year - 5)
+
+    asked = " ".join(build_diligence_questions(brief))
+    assert "little recent activity" in asked
+
+
+def test_a_saas_site_with_no_dated_content_is_still_asked():
+    """The other mirror: only quiet-by-nature models are exempt."""
+    from dealscope.models import BusinessModel, CompanyBrief, Momentum
+    from dealscope.scoring import build_diligence_questions
+
+    brief = CompanyBrief(domain="app.test")
+    brief.business_model = BusinessModel(primary="saas")
+    brief.momentum = Momentum(last_content_date=None)
+
+    asked = " ".join(build_diligence_questions(brief))
+    assert "little recent activity" in asked

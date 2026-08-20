@@ -643,10 +643,16 @@ def build_diligence_questions(brief: CompanyBrief) -> list[str]:
         questions.append(
             f"The site runs on {platforms} — who holds the account, and does it transfer at close?"
         )
-    if brief.momentum.last_content_date is None or (
+    # A landscaper has no reason to blog, so a missing post date says nothing
+    # about it — which the narrative states outright. Asking anyway contradicted
+    # the paragraph directly above the question. A stale footer copyright is a
+    # different matter and still counts, for any business.
+    stale_copyright = bool(
         brief.momentum.copyright_year
         and datetime.now(timezone.utc).year - brief.momentum.copyright_year >= 3
-    ):
+    )
+    quiet_by_nature = brief.business_model.primary in QUIET_BY_NATURE
+    if stale_copyright or (brief.momentum.last_content_date is None and not quiet_by_nature):
         questions.append(
             "The site shows little recent activity — is the business still trading at normal volume?"
         )
