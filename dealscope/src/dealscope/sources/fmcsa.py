@@ -96,7 +96,15 @@ class Carrier:
         Printing "matched at 0%" for it read as a failed match.
         """
         if not self.match_basis:
-            return "looked up directly by USDOT number — no name matching involved"
+            # The number came from the user, so the link between this carrier
+            # and the website being analysed is asserted, not established. Say
+            # so: the tool will otherwise print a stranger's fleet and crash
+            # history beside any domain it is handed.
+            return (
+                "fetched directly from the USDOT number supplied — no name "
+                "matching, and no check that this carrier is the business "
+                "whose website was read"
+            )
         return (
             f"{self.match_score:.0%} — {self.match_basis}; "
             f"{self.considered} candidate(s) considered"

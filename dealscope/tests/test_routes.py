@@ -217,3 +217,28 @@ def test_one_usdot_cannot_be_spread_across_a_batch():
     )
     with pytest.raises(SystemExit):
         _run_analyze(args)
+
+
+def test_a_supplied_number_says_the_link_is_unverified():
+    """--usdot attaches a record to whatever domain was passed.
+
+    The number is asserted by the user, not established by the tool, so the
+    brief has to say so — otherwise it prints a stranger's fleet and crash
+    history beside any website it is handed, with no hint that the pairing
+    was never checked.
+    """
+    fetcher = _FakeFetcher(_FakePage(SNAPSHOT_HTML))
+    carrier, _note, _kind = fmcsa.get_snapshot_with_note(fetcher, "1554728")
+    assert "no check that this carrier is the business" in carrier.how_found
+
+
+def test_a_name_matched_record_still_reports_its_score():
+    """The mirror: the matching path has a score, and still shows it."""
+    from dealscope.sources.fmcsa import Carrier
+
+    matched = Carrier(usdot="1", legal_name="ACME HAULING")
+    matched.match_score = 0.91
+    matched.match_basis = "name similarity 0.94; state matches"
+    matched.considered = 4
+    assert "91%" in matched.how_found
+    assert "4 candidate(s) considered" in matched.how_found
