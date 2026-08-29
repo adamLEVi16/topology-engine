@@ -95,7 +95,12 @@ class Carrier:
         measure of *operating* scale in any public record: power units say how
         many trucks exist, this says how hard they ran.
         """
-        found = re.search(r"([\d,]+)", self.mcs150_mileage or "")
+        # Only the part before the parenthesised year. Searching the whole
+        # string took the first digit run anywhere in it, so a cell reading
+        # "(2024)" or "N/A (2023)" reported the *year* as the mileage — 2,024
+        # miles over 12 trucks, published as a utilisation figure.
+        head = (self.mcs150_mileage or "").split("(")[0]
+        found = re.search(r"([\d,]+)", head)
         if not found:
             return None
         digits = found.group(1).replace(",", "")
@@ -477,14 +482,22 @@ def find_carrier(
 def build_evidence(carrier: Carrier) -> list[Evidence]:
     """One record per field, all pointing at the SAFER snapshot."""
     url = carrier.source_url
+    # A number the user supplied has no match score. Writing 0.0 into the
+    # evidence table printed 0.00 confidence against the most certain fact in
+    # the section — the same misreading how_found was rewritten to prevent.
+    matched_by_name = bool(carrier.match_basis)
     items: list[Evidence] = [
         Evidence(
             "fleet.usdot",
             f"USDOT {carrier.usdot} — {carrier.display_name}",
             url,
             "fmcsa",
-            carrier.match_score,
-            snippet=f"matched on {carrier.match_basis}",
+            carrier.match_score if matched_by_name else 0.95,
+            snippet=(
+                f"matched on {carrier.match_basis}"
+                if matched_by_name
+                else "looked up by the USDOT number supplied"
+            ),
         )
     ]
 
@@ -503,6 +516,7 @@ def build_evidence(carrier: Carrier) -> list[Evidence]:
     add("fleet.entity_type", carrier.entity_type)
     add("fleet.physical_address", carrier.physical_address, 0.9)
     add("fleet.phone", carrier.phone, 0.9)
+    add("fleet.annual_miles", carrier.mcs150_mileage or None, 0.9)
     add("fleet.mcs150_date", carrier.mcs150_date.isoformat() if carrier.mcs150_date else None, 0.9)
     add("fleet.cargo_carried", carrier.cargo_carried, 0.85)
     return items

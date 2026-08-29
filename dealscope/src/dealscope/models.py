@@ -164,6 +164,17 @@ class TechFinding:
     evidence: list[Evidence] = field(default_factory=list)
 
 
+def _package_version() -> str:
+    """The installed version, so a brief never claims a stale one.
+
+    Imported lazily: config imports models, so a module-level import here
+    would be circular.
+    """
+    from .config import __version__
+
+    return __version__
+
+
 # --- Brief sections --------------------------------------------------------
 
 
@@ -273,7 +284,7 @@ class CompanyBrief:
     domain: str
     canonical_url: str = ""
     generated_at: datetime | None = None
-    version: str = "0.1.0"
+    version: str = field(default_factory=lambda: _package_version())
 
     name: str = ""
     tagline: str = ""

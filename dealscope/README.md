@@ -210,9 +210,11 @@ python -m dealscope analyze acme-hauling.com --fmcsa
 python -m dealscope analyze acme-hauling.com --usdot 1554728
 ```
 
-`--usdot` is the right path for a route or carrier business. A number is an
-identity, so there is nothing to match and nothing to get wrong — and these
-businesses very often have no website for a name to be scraped from anyway.
+`--usdot` is the right path for a route or carrier business: these very often
+have no website for a name to be scraped from in the first place. There is no
+name matching, so no wrong carrier can be picked — but the number is *your*
+assertion that this carrier is that business, and the brief says so rather
+than implying the pairing was verified.
 Three outcomes are kept apart, because they mean different things to a buyer: a
 record is a record; a record SAFER reports as *inactive* means the operating
 authority is dead, which is a finding; and **no record at all is not a finding**,

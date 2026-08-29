@@ -281,3 +281,57 @@ def test_utilisation_needs_both_numbers():
     c.power_units = None
     assert c.annual_miles == 100_000
     assert c.miles_per_unit is None
+
+
+def test_a_year_in_the_mileage_cell_is_not_a_mileage():
+    """SAFER writes "17,581,156 (2025)" — but sometimes just "(2024)".
+
+    Searching the whole string for digits took the year as the mileage: 2,024
+    miles over 12 trucks, published in bold as a utilisation figure.
+    """
+    from dealscope.sources.fmcsa import Carrier
+
+    for empty in ("(2024)", "N/A (2023)", "", "   "):
+        c = Carrier(usdot="1", mcs150_mileage=empty)
+        c.power_units = 12
+        assert c.annual_miles is None, empty
+        assert c.miles_per_unit is None, empty
+
+    real = Carrier(usdot="1", mcs150_mileage="17,581,156 (2025)")
+    real.power_units = 158
+    assert real.annual_miles == 17_581_156
+    assert real.mileage_year == "2025"
+
+
+def test_every_fleet_number_in_the_brief_has_an_evidence_row():
+    """Annual miles was the one bolded fact with nothing behind it."""
+    from dealscope.sources.fmcsa import Carrier, build_evidence
+
+    c = Carrier(usdot="54988", legal_name="GRAND ISLAND EXPRESS")
+    c.power_units, c.drivers, c.mcs150_mileage = 158, 164, "17,581,156 (2025)"
+    fields = {e.field for e in build_evidence(c)}
+    assert {"fleet.power_units", "fleet.drivers", "fleet.annual_miles"} <= fields
+
+
+def test_a_supplied_number_is_not_recorded_as_a_failed_match():
+    """match_score is 0.0 on the direct path — printing it read as 0% certain."""
+    from dealscope.sources.fmcsa import Carrier, build_evidence
+
+    supplied = Carrier(usdot="54988", legal_name="GRAND ISLAND EXPRESS")
+    row = next(e for e in build_evidence(supplied) if e.field == "fleet.usdot")
+    assert row.confidence >= 0.9
+    assert "supplied" in row.snippet
+
+    matched = Carrier(usdot="1", legal_name="ACME")
+    matched.match_score, matched.match_basis = 0.88, "name similarity 0.94"
+    row = next(e for e in build_evidence(matched) if e.field == "fleet.usdot")
+    assert row.confidence == 0.88
+    assert "matched on" in row.snippet
+
+
+def test_a_brief_reports_the_installed_version():
+    """The default drifted to 0.1.0 while the footer started printing it."""
+    from dealscope.config import __version__
+    from dealscope.models import CompanyBrief
+
+    assert CompanyBrief(domain="x.test").version == __version__
