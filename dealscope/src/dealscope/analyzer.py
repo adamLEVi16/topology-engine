@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from urllib.parse import urlparse
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -45,12 +46,20 @@ def _noop(_message: str) -> None:
 # A US address line ends in the state, optionally followed by a ZIP. ZIP+4
 # ("43004-1234") is as common on a contact page as the 5-digit form, and the
 # state it carries is worth +0.15 to a carrier match, so both are read.
-_TRAILING_STATE = re.compile(r"\b([A-Z]{2})\b(?:\s+\d{5}(?:-\d{4})?)?\s*$")
+_TRAILING_STATE = re.compile(r"\b([A-Z]{2})\b[,\s]*(?:\d{5}(?:-\d{4})?)?\s*$")
+# schema.org addresses end in addressCountry, so a structured US address reads
+# "…, OH, 45402, US". Taking "US" as the state penalised every FMCSA candidate
+# for being in the wrong state and refused perfect name matches — on precisely
+# the sites careful enough to publish structured data.
+_TRAILING_COUNTRY = re.compile(
+    r"[,\s]+(?:US|USA|U\.S\.A?\.?|United States(?: of America)?)\s*$", re.I
+)
 
 
 def state_from_address(candidate: str) -> str:
     """The two-letter state at the end of an address line, or ""."""
-    found = _TRAILING_STATE.search(candidate.strip())
+    line = _TRAILING_COUNTRY.sub("", candidate.strip()).rstrip(" ,")
+    found = _TRAILING_STATE.search(line)
     return found.group(1) if found else ""
 
 
@@ -155,10 +164,16 @@ def _analyze(
             )
             return brief
 
+        # The host the homepage actually landed on. A domain that redirects to
+        # a different registered domain otherwise yields no same-site links at
+        # all, and the brief calls the site "built client-side" for want of a
+        # footer. The typed host stays as the brief's identity.
+        site_host = (urlparse(home.final_url or home.url).hostname or host).lower()
+
         # A page full of text but nearly free of links means the navigation is
         # assembled by JavaScript. This tool reads server-rendered HTML only, so
         # that has to be said out loud rather than reported as "nothing found".
-        home_links = links_from(home, host)
+        home_links = links_from(home, site_host)
         client_rendered = len(home_links) < 12 and len(home.text.split()) > 400
         if client_rendered:
             fetcher.notes.append(
@@ -170,7 +185,7 @@ def _analyze(
         # Shopify tells us where its policy pages live.
         home_platforms = tuple(t.name for t in tech.extract([home])[0])
 
-        candidates = plan_candidates(fetcher, home, host, config, home_platforms)
+        candidates = plan_candidates(fetcher, home, site_host, config, home_platforms)
 
         # If robots.txt asked us to wait a long time between requests, read
         # fewer pages rather than spend ten minutes on one site. Coverage drops,
@@ -242,7 +257,7 @@ def _analyze(
         if empty:
             tried = {c.url for options in candidates.values() for c in options}
             for role, options in extra_candidates(
-                [p for p in pages if p.ok], host, empty, tried
+                [p for p in pages if p.ok], site_host, empty, tried
             ).items():
                 position = cursor[role]
                 candidates[role] = (
@@ -263,14 +278,14 @@ def _analyze(
             if rendered_home.ok and rendered_home.rendered:
                 pages[0] = home = rendered_home
                 client_rendered = True
-                recovered = len(links_from(rendered_home, host)) - len(home_links)
+                recovered = len(links_from(rendered_home, site_host)) - len(home_links)
                 fetcher.notes.append(
                     f"rendered the homepage in a browser and found {max(0, recovered)} "
                     "additional links"
                 )
                 tried = {c.url for options in candidates.values() for c in options}
                 for role, options in extra_candidates(
-                    [rendered_home], host, still_empty, tried
+                    [rendered_home], site_host, still_empty, tried
                 ).items():
                     position = cursor[role]
                     candidates[role] = (

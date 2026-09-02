@@ -243,6 +243,7 @@ class Fetcher:
         self._robots: dict[str, urllib.robotparser.RobotFileParser | None] = {}
         self._delays: dict[str, float] = {}
         self.notes: list[str] = []
+        self._host_verdicts: dict[str, bool] = {}
         self.robots_blocked: list[str] = []
         self.fetch_count = 0
         self.render_count = 0
@@ -271,6 +272,48 @@ class Fetcher:
             if gap > 0:
                 time.sleep(gap)
         self._last_hit[host] = time.monotonic()
+
+    MAX_REDIRECTS = 8
+
+    def _request(self, method: str, url: str, **kwargs: Any) -> requests.Response:
+        """Issue a request, following redirects one guarded hop at a time.
+
+        requests' allow_redirects=True resolves the whole chain — and reads the
+        final body — before returning, so the "checked again after a redirect"
+        guard used to run only after an internal target had already been
+        fetched. Here every hop is checked before it is requested, so a public
+        site that 302s to a metadata address or a loopback port never gets
+        that request made on its behalf.
+        """
+        for _ in range(self.MAX_REDIRECTS + 1):
+            self._guard_host(url)
+            resp = self.session.request(method, url, allow_redirects=False, **kwargs)
+            if not (resp.is_redirect or resp.is_permanent_redirect):
+                return resp
+            target = resp.headers.get("Location", "")
+            resp.close()
+            if not target:
+                raise requests.TooManyRedirects("redirect without a Location header")
+            url = urljoin(url, target)
+            # A POST answered with 301/302/303 is retried as a GET, as browsers do.
+            if method == "POST" and resp.status_code in (301, 302, 303):
+                method = "GET"
+                kwargs.pop("data", None)
+        raise requests.TooManyRedirects(f"more than {self.MAX_REDIRECTS} redirects")
+
+    def _host_ok(self, hostname: str) -> bool:
+        """Boolean form of the guard, cached per host, for the browser to call
+        on every request it is about to make."""
+        if self.config.allow_private_hosts:
+            return True
+        hostname = (hostname or "").lower()
+        if hostname not in self._host_verdicts:
+            try:
+                check_public_host(hostname)
+                self._host_verdicts[hostname] = True
+            except BlockedHost:
+                self._host_verdicts[hostname] = False
+        return self._host_verdicts[hostname]
 
     def _guard_host(self, url: str) -> None:
         """Raise :class:`BlockedHost` unless this URL may be fetched."""
@@ -329,16 +372,16 @@ class Fetcher:
         parser: urllib.robotparser.RobotFileParser | None = None
         try:
             self._wait(parts.netloc)
-            resp = self.session.get(
+            resp = self._request(
+                "GET",
                 key + "/robots.txt",
                 timeout=self.config.timeout,
                 verify=self.config.verify_tls,
-                allow_redirects=True,
             )
             if resp.status_code == 200 and len(resp.content) < 512_000:
                 parser = urllib.robotparser.RobotFileParser()
                 parser.parse(resp.text.splitlines())
-        except requests.RequestException as exc:
+        except (requests.RequestException, BlockedHost) as exc:
             log.debug("robots.txt unavailable for %s: %s", key, exc)
 
         self._robots[key] = parser
@@ -470,11 +513,11 @@ class Fetcher:
             try:
                 self._wait(host, delay)
                 self.fetch_count += 1
-                resp = self.session.get(
+                resp = self._request(
+                    "GET",
                     url,
                     timeout=self.config.timeout,
                     verify=self.config.verify_tls,
-                    allow_redirects=True,
                     stream=True,
                 )
 
@@ -521,12 +564,8 @@ class Fetcher:
                     page.error = f"HTTP {page.status}"
                     return page
 
-                try:
-                    self._guard_host(page.final_url)
-                except BlockedHost as exc:
-                    self.notes.append(f"redirected into a blocked address: {exc}")
-                    return Page(url=url, role=role, error=str(exc))
-
+                # Every redirect hop was guarded inside _request before it was
+                # requested, so final_url is already known to be public.
                 page.text = html_to_text(html)
                 page.title = page_title(html)
 
@@ -535,9 +574,15 @@ class Fetcher:
                     # that a thin page went unread rather than staying silent.
                     self._render_into(page, force=force_render)
 
-                self._write_cache(cache_key, page)
+                # #7: a forced render that did not happen must not be cached
+                # under the render key, or every run for the next 24h reads the
+                # un-rendered copy and never retries the browser.
+                self._write_cache(url if (force_render and not page.rendered) else cache_key, page)
                 return page
 
+            except BlockedHost as exc:
+                self.notes.append(f"redirected into a blocked address: {exc}")
+                return Page(url=url, role=role, error=str(exc))
             except requests.RequestException as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
                 if attempt < self.config.retries:
@@ -571,7 +616,10 @@ class Fetcher:
         # page often carries its whole nav as a string inside a <script>, which
         # would otherwise read as link-rich.
         links = len(make_soup(page.html).find_all("a", href=True))
-        return words < 250 or links < 15
+        # Both, not either. A ten-page plumber's site has 8-12 nav links on
+        # every page and was being re-fetched in a browser for each of them.
+        # A shell that hands its content to JavaScript is short on both.
+        return words < 250 and links < 15
 
     def _render_into(self, page: Page, force: bool = False) -> None:
         """Replace a page's HTML with a browser-rendered version, if we can."""
@@ -583,7 +631,14 @@ class Fetcher:
             if note not in self.notes:
                 self.notes.append(note)
             return
-        rendered = self.renderer.render(page.final_url or page.url)
+        target = page.final_url or page.url
+        # #4: the browser is a second visit to the same host. It waits its turn
+        # like the first one did. (It also passed robots for this URL already;
+        # the byte cap cannot be applied to what Chromium chooses to load.)
+        self._wait(urlparse(target).netloc, self.delay_for(target))
+        # #1: the browser checks every host it is about to touch — subresources
+        # and, crucially, wherever a script or a 302 navigates it to.
+        rendered = self.renderer.render(target, host_ok=self._host_ok)
         if not rendered:
             if self.renderer.reason:
                 self.notes.append(f"headless rendering unavailable: {self.renderer.reason}")
@@ -628,14 +683,14 @@ class Fetcher:
         try:
             self._wait(urlparse(url).netloc, self.delay_for(url))
             self.fetch_count += 1
-            resp = self.session.post(
+            resp = self._request(
+                "POST",
                 url,
                 data=data,
                 timeout=self.config.timeout,
                 verify=self.config.verify_tls,
-                allow_redirects=True,
             )
-        except requests.RequestException as exc:
+        except (requests.RequestException, BlockedHost) as exc:
             return Page(url=url, role=role, error=f"{type(exc).__name__}: {exc}")
 
         page = Page(
@@ -670,12 +725,12 @@ class Fetcher:
         try:
             self._wait(urlparse(url).netloc)
             self.fetch_count += 1
-            resp = self.session.get(
-                url, timeout=self.config.timeout, verify=self.config.verify_tls
+            resp = self._request(
+                "GET", url, timeout=self.config.timeout, verify=self.config.verify_tls
             )
             if resp.status_code == 200 and len(resp.content) < self.config.max_bytes:
                 return resp.text
-        except requests.RequestException as exc:
+        except (requests.RequestException, BlockedHost) as exc:
             log.debug("could not fetch %s: %s", url, exc)
         return ""
 

@@ -13,6 +13,8 @@ pretending the site was empty.
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlparse
+from typing import Callable
 import os
 from pathlib import Path
 
@@ -147,8 +149,16 @@ class Renderer:
         self._shutdown()
         return False
 
-    def render(self, url: str) -> str | None:
-        """Fully-rendered HTML for ``url``, or ``None`` if that was not possible."""
+    def render(
+        self, url: str, host_ok: Callable[[str], bool] | None = None
+    ) -> str | None:
+        """Fully-rendered HTML for ``url``, or ``None`` if that was not possible.
+
+        ``host_ok`` is asked about every host the page tries to reach, and
+        about wherever the page ends up after scripts and redirects have run.
+        Without it a page could ``location.replace()`` itself onto a loopback
+        port or a metadata address and hand that DOM back as its own content.
+        """
         if not self._ensure_browser():
             return None
 
@@ -160,17 +170,22 @@ class Renderer:
                 ignore_https_errors=self.ignore_https_errors,
             )
             page = context.new_page()
-            page.route(
-                "**/*",
-                lambda route: (
-                    route.abort()
-                    if route.request.resource_type in BLOCKED_RESOURCES
-                    else route.continue_()
-                ),
-            )
+            def gate(route):  # noqa: ANN001 - playwright Route
+                request = route.request
+                if request.resource_type in BLOCKED_RESOURCES:
+                    return route.abort()
+                if host_ok is not None and not host_ok(urlparse(request.url).hostname or ""):
+                    return route.abort()
+                return route.continue_()
+
+            page.route("**/*", gate)
             page.goto(url, wait_until="domcontentloaded", timeout=self.timeout * 1000)
             # Give client-side navigation a moment to attach.
             page.wait_for_timeout(self.wait_ms)
+            landed = page.url
+            if host_ok is not None and not host_ok(urlparse(landed).hostname or ""):
+                log.info("render of %s navigated to a blocked host (%s); discarded", url, landed)
+                return None
             html = page.content()
             self.render_count += 1
             return html

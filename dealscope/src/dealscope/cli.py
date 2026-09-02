@@ -167,13 +167,19 @@ def _run_analyze(args: argparse.Namespace) -> int:
             failures += 1
             continue
 
-        if any(flag.key == "unreachable" for flag in brief.risk_flags):
+        # analyze() turns an internal exception into a brief that says so;
+        # that brief must not leave the process exiting 0 for a batch script.
+        if any(flag.key in ("unreachable", "analysis_failed") for flag in brief.risk_flags):
             failures += 1
 
         text = _render(brief, args.format)
         if destination is None:
             rendered.append(text)
         elif many:
+            path = destination / f"{brief.domain}.{EXTENSIONS[args.format]}"
+            path.write_text(text, encoding="utf-8")
+            print(f"wrote {path}", file=sys.stderr)
+        elif destination.is_dir():
             path = destination / f"{brief.domain}.{EXTENSIONS[args.format]}"
             path.write_text(text, encoding="utf-8")
             print(f"wrote {path}", file=sys.stderr)

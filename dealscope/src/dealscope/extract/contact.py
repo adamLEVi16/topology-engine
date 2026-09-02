@@ -139,8 +139,11 @@ def _addresses_from_jsonld(pages: list[Page]) -> tuple[list[str], list[str], lis
                         Evidence("trust.address", formatted, page.final_url, "json-ld", 0.9)
                     )
                 locality = st.text_of(candidate.get("addressLocality"))
-                region = st.text_of(candidate.get("addressCountry")) or st.text_of(
-                    candidate.get("addressRegion")
+                # Region before country: "Dayton, OH" is a place, "Dayton, US"
+                # is a continent. The country only fills in when there is no
+                # region, as with many non-US addresses.
+                region = st.text_of(candidate.get("addressRegion")) or st.text_of(
+                    candidate.get("addressCountry")
                 )
                 place = ", ".join(p for p in (locality, region) if p)
                 if place and place not in locations:
@@ -154,20 +157,34 @@ HEADER_CLASS = re.compile(r"header|topbar|top-bar|masthead|navbar|nav-|site-nav"
 HEADER_DEPTH = 6
 
 
-def _in_site_header(anchor) -> bool:
-    """Does this link live in the masthead rather than the footer?"""
+def _ancestors(anchor, depth: int):
     node = anchor
-    for _ in range(HEADER_DEPTH):
+    for _ in range(depth):
         node = node.parent
         if node is None or getattr(node, "name", None) is None:
+            return
+        yield node
+
+
+def _in_site_header(anchor) -> bool:
+    """Does this link live in the masthead rather than the footer?
+
+    Footer ancestry is settled first, across the whole walk. Checking classes
+    on the way up let a "footer-nav-links" wrapper match "nav-" and return
+    before the enclosing <footer> was ever reached — so a footer phone number
+    scored as a masthead one and pushed a consultancy toward local services.
+    """
+    chain = list(_ancestors(anchor, HEADER_DEPTH))
+    for node in chain:
+        classes = " ".join(node.get("class") or []).lower()
+        if node.name == "footer" or "footer" in classes:
             return False
+    for node in chain:
         if node.name in ("header", "nav"):
             return True
         classes = " ".join(node.get("class") or [])
         if classes and HEADER_CLASS.search(classes):
             return True
-        if node.name == "footer":
-            return False
     return False
 
 

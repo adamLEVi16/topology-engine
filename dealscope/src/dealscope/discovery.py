@@ -192,9 +192,22 @@ def _sitemap_candidates(fetcher: Fetcher, home_url: str, domain: str, limit: int
     return found
 
 
-def _looks_localised(url: str) -> bool:
-    match = SKIP_LOCALE.match(urlparse(url).path or "/")
-    return bool(match) and match.group(1).lower() not in _KNOWN_TLD_LIKE
+def _looks_localised(url: str, known_paths: set[str] | None = None) -> bool:
+    """Is this a locale-prefixed duplicate of a page we already have?
+
+    Only when the un-prefixed twin is in the link set. A site served entirely
+    under /en/ has no twin — dropping those links left it with no navigation
+    at all and a brief that reported no pricing, about, careers or contact
+    page for a site that publishes every one of them.
+    """
+    path = urlparse(url).path or "/"
+    match = SKIP_LOCALE.match(path)
+    if not match or match.group(1).lower() in _KNOWN_TLD_LIKE:
+        return False
+    if known_paths is None:
+        return True
+    twin = "/" + path[match.end():]
+    return twin.rstrip("/") in known_paths or twin in known_paths
 
 
 # Roles where a second page genuinely adds information: privacy *and* terms,
@@ -272,6 +285,8 @@ def plan_candidates(
     walks the list until something actually loads.
     """
     scored: dict[str, dict[str, tuple[float, bool]]] = {}
+    home_links = links_from(home, domain)
+    known_paths = {(urlparse(u).path or "/").rstrip("/") or "/" for u, _ in home_links}
 
     def record(url: str, role: str, score: float, linked: bool) -> None:
         bucket = scored.setdefault(role, {})
@@ -280,7 +295,7 @@ def plan_candidates(
             bucket[url] = (score, linked or (previous[1] if previous else False))
 
     def offer(url: str, anchor: str, penalty: float = 0.0, linked: bool = True) -> None:
-        if _looks_localised(url):
+        if _looks_localised(url, known_paths):
             return
         role, score = classify(url, anchor)
         if not role or score <= 0:
@@ -303,7 +318,7 @@ def plan_candidates(
                     record(ancestor, role, anc_score - penalty - 0.1, False)
 
     home_url = home.final_url or home.url
-    for url, anchor in links_from(home, domain):
+    for url, anchor in home_links:
         offer(url, anchor)
 
     # Sitemap entries carry no anchor text, so they score lower by design and
@@ -359,8 +374,10 @@ def extra_candidates(
     scored: dict[str, dict[str, tuple[float, bool]]] = {}
 
     for page in pages:
-        for url, anchor in links_from(page, domain):
-            if url in exclude or _looks_localised(url):
+        links = links_from(page, domain)
+        known_paths = {(urlparse(u).path or "/").rstrip("/") or "/" for u, _ in links}
+        for url, anchor in links:
+            if url in exclude or _looks_localised(url, known_paths):
                 continue
             role, score = classify(url, anchor)
             if role not in roles or score <= 0:
